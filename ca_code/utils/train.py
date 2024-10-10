@@ -17,8 +17,9 @@ import numpy as np
 import torch as th
 from torch import nn
 from torch.optim.lr_scheduler import LRScheduler
-from torch.utils.tensorboard import SummaryWriter
 
+import wandb
+import wandb.wandb_run
 from ca_code.utils.module_loader import load_class
 from ca_code.utils.torchutils import to_device
 
@@ -135,7 +136,7 @@ def train(
     train_data: Iterator,
     config: Mapping[str, Any],
     lr_scheduler: Optional[LRScheduler] = None,
-    train_writer: Optional[SummaryWriter] = None,
+    wandb_run: Optional[wandb.wandb_run.Run] = None,
     summary_fn: Optional[Callable] = None,
     batch_filter_fn: Optional[Callable] = None,
     saving_enabled: bool = True,
@@ -194,20 +195,20 @@ def train(
             loss_str = " ".join([f"{k}={v:.4f}" for k, v in _loss_dict.items()])
             logger.info(f"iter={iteration}: {loss_str}")
 
-        if logging_enabled and train_writer is not None and iteration % config.train.log_every_n_steps == 0:
-            for name, value in _loss_dict.items():
-                train_writer.add_scalar(f"Losses/{name}", value, global_step=iteration)
-            train_writer.flush()
+        if logging_enabled and wandb_run is not None and iteration % config.train.log_every_n_steps == 0:
+            wandb_run.log({f"loss/{name}": value for name, value in _loss_dict.items()}, step=iteration)
 
         if (
             summary_enabled
             and summary_fn is not None
-            and train_writer is not None
+            and wandb_run is not None
             and iteration % config.train.summary_every_n_steps == 0
         ):
             summaries = summary_fn(preds, batch)
-            for name, value in summaries.items():
-                train_writer.add_image(f"Images/{name}", value, global_step=iteration)
+            bg_list = batch["background"].detach().split(1, dim=0)  # [3, 2048, 1337]
+            bg = (th.cat(bg_list, dim=-1).squeeze() * 255).to(dtype=th.uint8, device="cpu")
+            summaries["background"] = bg
+            wandb_run.log({f"images/{name}": wandb.Image(value) for name, value in summaries.items()}, step=iteration)
 
         if saving_enabled and iteration is not None and iteration % config.train.ckpt_every_n_steps == 0:
             logger.info(f"iter={iteration}: saving checkpoint to `{config.train.ckpt_dir}`")

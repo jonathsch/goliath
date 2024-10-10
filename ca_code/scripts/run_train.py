@@ -12,10 +12,11 @@ import torch as th
 from addict import Dict as AttrDict
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 
+import wandb
 from ca_code.utils.dataloader import BodyDataset, collate_fn
-from ca_code.utils.train import build_optimizer, load_checkpoint, load_from_config, train
+from ca_code.utils.module_loader import build_optimizer
+from ca_code.utils.train import load_checkpoint, load_from_config, train
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,15 @@ def main(config: DictConfig):
         **config.dataloader,
     )
 
-    train_writer = SummaryWriter(log_dir=config.train.tb_dir)
+    # train_writer = SummaryWriter(log_dir=config.train.tb_dir)
+    wandb_run = wandb.init(
+        project="RGCA",
+        name=config.train.run_id,
+        group=config.train.tag,
+        tags=[config.sid, config.model_name],
+        config=OmegaConf.to_container(config),
+    )
+
     summary_fn = load_from_config(config.summary)
 
     train(
@@ -62,7 +71,7 @@ def main(config: DictConfig):
         config,
         summary_fn=summary_fn,
         batch_filter_fn=batch_filter_fn,
-        train_writer=train_writer,
+        wandb_run=wandb_run,
         saving_enabled=True,
         logging_enabled=True,
         summary_enabled=True,
