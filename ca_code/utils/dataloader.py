@@ -17,6 +17,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+import pillow_avif  # noqa: F401
 import torch
 import torch.nn.functional as F
 from PIL import Image
@@ -233,9 +234,13 @@ class BodyDataset(Dataset):
 
     def load_image(self, frame: int, camera: str) -> Image:
         zip_path = self.root_path / "image" / f"cam{camera}.zip"
+        avif_path = self.root_path / "image" / f"cam{camera}" / f"{frame:06d}.avif"
+        print(avif_path)
+        return pil_to_tensor(Image.open(avif_path))
 
         with zipfile.ZipFile(zip_path, "r") as zipf:
             with zipf.open(f"cam{camera}/{frame:06d}.avif", "r") as avif_file:
+                print(f"cam{camera}/{frame:06d}.avif")
                 return pil_to_tensor(Image.open(BytesIO(avif_file.read())))
 
     @lru_cache(maxsize=CACHE_LENGTH)
@@ -683,7 +688,8 @@ class BodyDataset(Dataset):
 
         try:
             data = self.get(frame, camera)
-        except Exception:
+        except Exception as e:
+            raise e
             logger.warning(f"error when loading frame_id=`{frame}`, camera_id=`{camera}`, skipping")
             return None
 
