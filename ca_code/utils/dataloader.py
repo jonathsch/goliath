@@ -489,7 +489,6 @@ class BodyDataset(Dataset):
             "camera_ids": list(krt.keys()),
             "template_mesh": template_mesh,
             "skeleton_scales": skeleton_scales,
-            "template_mesh": template_mesh,
             "template_mesh_unscaled": template_mesh_unscaled,
             "ambient_occlusion_mean": ambient_occlusion_mean / 255.0,
             "color_mean": color_mean,
