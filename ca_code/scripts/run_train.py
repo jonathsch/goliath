@@ -9,27 +9,19 @@ import sys
 from typing import List
 
 import torch as th
-
 from addict import Dict as AttrDict
-
-from ca_code.utils.dataloader import BodyDataset, collate_fn
-
-from ca_code.utils.train import (
-    build_optimizer,
-    load_checkpoint,
-    load_from_config,
-    train,
-)
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
-
 from torch.utils.tensorboard import SummaryWriter
+
+from ca_code.utils.dataloader import BodyDataset, collate_fn
+from ca_code.utils.train import build_optimizer, load_checkpoint, load_from_config, train
 
 logger = logging.getLogger(__name__)
 
 
 def main(config: DictConfig):
-    device = th.device(f"cuda:0")
+    device = th.device("cuda:0")
 
     train_dataset = BodyDataset(**config.data)
     batch_filter_fn = train_dataset.batch_filter
@@ -53,9 +45,7 @@ def main(config: DictConfig):
         load_checkpoint(**config.train.ckpt, modules={"model": model})
     elif "resume" in config.train:
         logger.info(f"loading latest checkpoint from: {config.train.ckpt_dir}")
-        load_checkpoint(
-            config.train.ckpt_dir, modules={"model": model, "optimizer": optimizer}
-        )
+        load_checkpoint(config.train.ckpt_dir, modules={"model": model, "optimizer": optimizer})
 
     logger.info("starting training with the config:")
     logger.info(OmegaConf.to_yaml(config))
@@ -86,7 +76,6 @@ def main(config: DictConfig):
 
 
 if __name__ == "__main__":
-
     config_path: str = sys.argv[1]
     console_commands: List[str] = sys.argv[2:]
 
