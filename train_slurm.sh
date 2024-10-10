@@ -50,7 +50,7 @@ source /rhome/jschmidt/.bashrc
 source activate rgca
 cd ${ROOT_DIR}
 
-mkdir -p ${CKPT_DIR}/slurm/
+mkdir -p ${CKPT_DIR}
 
 nvidia-smi
 
