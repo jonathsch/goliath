@@ -1,5 +1,5 @@
 sid: AXE977
-root_dir: /uca/julieta/oss/goliath/
+root_dir: /mnt/cluster/pegasus/jschmidt/goliath
 
 data:
   root_path: ${root_dir}/m--20230306--0707--AXE977--pilot--ProjectGoliath--Head/
@@ -88,19 +88,20 @@ optimizer:
       lr: 0.001
 
 train:
+  run_id: "debug" # NOTE: Override this from the cmd line with a unique id
   tag: ${model_name}.${sid}
-  run_dir: runs/${.tag}
+  run_dir: runs/${.tag}/${.run_id}
   tb_dir: ${.run_dir}/tb
   ckpt_dir: ${.run_dir}/checkpoints
 
   # CHANGE ME
-  n_max_iters: 800_000
+  n_max_iters: 200_000
   log_every_n_steps: 10
   summary_every_n_steps: 1_000
   ckpt_every_n_steps: 10_000
 
 
-test_path: /checkpoint/avatar/julietamartinez/goliath/RGCA/AXE977/1/
+test_path: ${.run_dir}/test
 
 test:
   ckpt:
