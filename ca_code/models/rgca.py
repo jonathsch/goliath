@@ -4,43 +4,26 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 import logging
-
 import math
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-import ca_code.nn.layers as la
-
-import ca_code.utils.sh as sh
 import cv2
-import numpy as np
 import torch as th
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
+from torchvision.utils import make_grid
 
+import ca_code.nn.layers as la
 from ca_code.nn.color_cal import CalV5
-
 from ca_code.nn.dof_cal import LearnableBlur
 from ca_code.nn.layers import make_conv_trans, make_linear
+from ca_code.utils import sh
 from ca_code.utils.envmap import compose_envmap, dir2uv
-
-from ca_code.utils.geom import (
-    depth2normals,
-    GeometryModule,
-)
-
-from ca_code.utils.image import (
-    linear2srgb,
-    make_image_grid_batched,
-    scale_diff_image,
-)
-
+from ca_code.utils.geom import GeometryModule, depth2normals
+from ca_code.utils.image import linear2srgb, make_image_grid_batched, scale_diff_image
 from ca_code.utils.mipmap_sampler import mipmap_grid_sample
-
 from ca_code.utils.render_gsplat import render as render_gs
-
 from extensions.sgutils.sgutils import evaluate_gaussian
-
-from torchvision.utils import make_grid
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +123,6 @@ class AutoEncoder(nn.Module):
         rgb = th.stack(rgbs)
         depth = th.stack(depths)
 
-        rgb = rgb
         alpha = 1.0 - th.stack(Ts)
         depth = depth / alpha.clamp(0.05, 1.0)
 
@@ -170,25 +152,17 @@ class AutoEncoder(nn.Module):
         lightrot: Optional[th.Tensor] = None,
         **kwargs,
     ) -> Dict[str, Any]:
-        B = head_pose.shape[0]
-
         light_intensity = light_intensity.expand(-1, -1, 3)
 
         # convert everything into head relative coordinates
         head_pose_4x4 = th.cat([head_pose, th.zeros_like(head_pose[:, :1, :])], dim=1)
         head_pose_4x4[:, 3, 3] = 1.0
         headrel_Rt = Rt @ head_pose_4x4
-        headrel_campos = (
-            (campos - head_pose[:, :3, 3])[:, None] @ head_pose[:, :3, :3]
-        )[:, 0]
-        headrel_light_pos = (light_pos - head_pose[:, None, :3, 3]) @ head_pose[
-            :, :3, :3
-        ]
+        headrel_campos = ((campos - head_pose[:, :3, 3])[:, None] @ head_pose[:, :3, :3])[:, 0]
+        headrel_light_pos = (light_pos - head_pose[:, None, :3, 3]) @ head_pose[:, :3, :3]
         headrel_light_dir = F.normalize(headrel_light_pos, p=2, dim=-1)
         sh_coeffs = sh.dir2sh_torch(self.n_diff_sh, headrel_light_dir)
-        headrel_light_sh = (sh_coeffs[:, :, None] * light_intensity[..., None]).sum(
-            dim=1
-        )
+        headrel_light_sh = (sh_coeffs[:, :, None] * light_intensity[..., None]).sum(dim=1)
         if lightrot is not None:
             lightrot = lightrot @ head_pose[:, :3, :3]
         # encoding
@@ -274,9 +248,7 @@ class Encoder(nn.Module):
 
         self.n_verts_in = n_verts_in
 
-        self.geommod = th.nn.Sequential(
-            la.LinearWN(self.n_verts_in * 3, 256), th.nn.LeakyReLU(0.2, inplace=True)
-        )
+        self.geommod = th.nn.Sequential(la.LinearWN(self.n_verts_in * 3, 256), th.nn.LeakyReLU(0.2, inplace=True))
 
         self.texmod = th.nn.Sequential(
             la.Conv2dWNUB(3, 32, 512, 512, 4, 2, 1),
@@ -296,9 +268,7 @@ class Encoder(nn.Module):
             la.Conv2dWNUB(256, 256, 4, 4, 4, 2, 1),
             th.nn.LeakyReLU(0.2, inplace=True),
         )
-        self.jointmod = th.nn.Sequential(
-            la.LinearWN(256 + 256 * 4 * 4, 512), th.nn.LeakyReLU(0.2, inplace=True)
-        )
+        self.jointmod = th.nn.Sequential(la.LinearWN(256 + 256 * 4 * 4, 512), th.nn.LeakyReLU(0.2, inplace=True))
 
         self.mean: th.nn.Module = la.LinearWN(512, self.n_embs)
         self.logvar: th.nn.Module = la.LinearWN(512, self.n_embs)
@@ -388,12 +358,8 @@ class PrimDecoder(nn.Module):
 
         self.geo_fn = geo_fn
 
-        self.viewmod = nn.Sequential(
-            *make_linear(3, 8, "wn", nn.LeakyReLU(0.2, inplace=True))
-        )
-        self.encmod = nn.Sequential(
-            *make_linear(n_embs, 256 * 8 * 8, "wn", nn.LeakyReLU(0.2, inplace=True))
-        )
+        self.viewmod = nn.Sequential(*make_linear(3, 8, "wn", nn.LeakyReLU(0.2, inplace=True)))
+        self.encmod = nn.Sequential(*make_linear(n_embs, 256 * 8 * 8, "wn", nn.LeakyReLU(0.2, inplace=True)))
 
         self.diff_sh_degree = n_diff_sh
         self.color_sh_degree = n_color_sh
@@ -401,29 +367,15 @@ class PrimDecoder(nn.Module):
         self.n_mono_sh_coeffs = (n_diff_sh + 1) ** 2 - self.n_color_sh_coeffs
         self.n_diff_coeffs = 3 * self.n_color_sh_coeffs + self.n_mono_sh_coeffs
 
-        vind_ch = (
-            self.n_diff_coeffs + 11 + 1
-        )  # diffuse_sh + Gaussian params + roughness
+        vind_ch = self.n_diff_coeffs + 11 + 1  # diffuse_sh + Gaussian params + roughness
         vd_ch = 4  # normal + visibility
         self.vnocond_mod = nn.Sequential(
-            *make_conv_trans(
-                256, 256, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(16, 16)
-            ),
-            *make_conv_trans(
-                256, 128, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(32, 32)
-            ),
-            *make_conv_trans(
-                128, 128, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(64, 64)
-            ),
-            *make_conv_trans(
-                128, 64, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(128, 128)
-            ),
-            *make_conv_trans(
-                64, 32, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(256, 256)
-            ),
-            *make_conv_trans(
-                32, 16, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(512, 512)
-            ),
+            *make_conv_trans(256, 256, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(16, 16)),
+            *make_conv_trans(256, 128, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(32, 32)),
+            *make_conv_trans(128, 128, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(64, 64)),
+            *make_conv_trans(128, 64, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(128, 128)),
+            *make_conv_trans(64, 32, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(256, 256)),
+            *make_conv_trans(32, 16, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(512, 512)),
             *make_conv_trans(16, vind_ch, 4, 2, 1, "wn", ub=(1024, 1024)),
         )
         self.vcond_mod = nn.Sequential(
@@ -437,21 +389,11 @@ class PrimDecoder(nn.Module):
                 nn.LeakyReLU(0.2, inplace=True),
                 ub=(16, 16),
             ),
-            *make_conv_trans(
-                256, 128, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(32, 32)
-            ),
-            *make_conv_trans(
-                128, 128, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(64, 64)
-            ),
-            *make_conv_trans(
-                128, 64, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(128, 128)
-            ),
-            *make_conv_trans(
-                64, 32, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(256, 256)
-            ),
-            *make_conv_trans(
-                32, 16, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(512, 512)
-            ),
+            *make_conv_trans(256, 128, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(32, 32)),
+            *make_conv_trans(128, 128, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(64, 64)),
+            *make_conv_trans(128, 64, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(128, 128)),
+            *make_conv_trans(64, 32, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(256, 256)),
+            *make_conv_trans(32, 16, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(512, 512)),
             *make_conv_trans(16, vd_ch, 4, 2, 1, "wn", ub=(1024, 1024)),
         )
 
@@ -495,9 +437,7 @@ class PrimDecoder(nn.Module):
         f_vnocond = self.vnocond_mod(embs)
 
         # run view-dependent decoder
-        view = self.viewmod(F.normalize(headrel_campos, dim=1))[
-            :, :, None, None
-        ].expand(-1, -1, 8, 8)
+        view = self.viewmod(F.normalize(headrel_campos, dim=1))[:, :, None, None].expand(-1, -1, 8, 8)
         embs_v = th.cat([embs, view], dim=1)
         f_vcond = self.vcond_mod(embs_v)
         f_vcond = f_vcond.permute(0, 2, 3, 1).view(B, -1, 4)
@@ -505,16 +445,12 @@ class PrimDecoder(nn.Module):
         # diffuse sh
         diff_shs = f_vnocond[:, : self.n_diff_coeffs]
         diff_shs = diff_shs.permute(0, 2, 3, 1).view(B, -1, self.n_diff_coeffs)
-        diff_shs_color = diff_shs[..., : self.n_color_sh_coeffs * 3].reshape(
-            B, -1, 3, self.n_color_sh_coeffs
-        )
-        diff_shs_mono = diff_shs[..., self.n_color_sh_coeffs * 3 :].reshape(
-            B, -1, 1, self.n_mono_sh_coeffs
-        )
+        diff_shs_color = diff_shs[..., : self.n_color_sh_coeffs * 3].reshape(B, -1, 3, self.n_color_sh_coeffs)
+        diff_shs_mono = diff_shs[..., self.n_color_sh_coeffs * 3 :].reshape(B, -1, 1, self.n_mono_sh_coeffs)
         diff_shs = th.cat([diff_shs_color, diff_shs_mono.expand(-1, -1, 3, -1)], -1)
 
         # Gaussian parameters
-        f_geom = f_vnocond[:, self.n_diff_coeffs: self.n_diff_coeffs + 11]
+        f_geom = f_vnocond[:, self.n_diff_coeffs : self.n_diff_coeffs + 11]
         f_geom = f_geom.permute(0, 2, 3, 1).view(B, -1, 11)
         primpos = f_geom[..., 0:3] + primposbase
         primqvec = F.normalize(f_geom[..., 3:7], dim=-1)
@@ -522,7 +458,7 @@ class PrimDecoder(nn.Module):
         opacity = th.sigmoid(f_geom[..., 10:11])
 
         # roughness
-        sigma = f_vnocond[:, self.n_diff_coeffs + 11:]
+        sigma = f_vnocond[:, self.n_diff_coeffs + 11 :]
         sigma = sigma.permute(0, 2, 3, 1).view(B, -1)
         sigma = (th.exp(sigma) * 0.1).clamp(min=0.01)
 
@@ -541,18 +477,14 @@ class PrimDecoder(nn.Module):
 
         # compute specular color
         view_local = F.normalize(primpos - headrel_campos[:, None], dim=-1, p=2.0)
-        ref_dirs = (
-            view_local - 2.0 * (view_local * spec_nml).sum(-1, keepdim=True) * spec_nml
-        )
+        ref_dirs = view_local - 2.0 * (view_local * spec_nml).sum(-1, keepdim=True) * spec_nml
 
         if preconv_envmap is not None:
             # rotate ref vector not envmap itself
             ref_dirs = th.einsum("bxy,bny->bnx", lightrot, ref_dirs)
             ref_uv = dir2uv(ref_dirs, 2)
             miplevel = sigma * 5
-            spec_color = mipmap_grid_sample(
-                preconv_envmap, ref_uv[..., None, :], miplevel[..., None]
-            )[..., 0]
+            spec_color = mipmap_grid_sample(preconv_envmap, ref_uv[..., None, :], miplevel[..., None])[..., 0]
             spec_color = spec_color.permute(0, 2, 1).clamp(max=1.0) * spec_vis
         else:
             # NOTE: it assumes the input lights are Dirac delta function
@@ -601,16 +533,12 @@ class PrimDecoder(nn.Module):
                     - 0.5
                 )
                 light_dir = F.normalize(light_dir, p=2, dim=-1)  # [1, 1, 3]
-                cos_weight = (light_dir * spec_nml).sum(
-                    dim=-1, keepdims=True
-                )  # [B, n_prims, 1]
+                cos_weight = (light_dir * spec_nml).sum(dim=-1, keepdims=True)  # [B, n_prims, 1]
                 light_intensity = th.ones_like(light_intensity[:, :1])
                 n_lights = th.ones_like(n_lights)
                 headrel_light_pos = 10000.0 * light_dir
                 sh_coeffs = sh.dir2sh_torch(self.diff_sh_degree, light_dir)
-                light_sh = (sh_coeffs[:, :, None] * light_intensity[..., None]).sum(
-                    dim=1
-                )
+                light_sh = (sh_coeffs[:, :, None] * light_intensity[..., None]).sum(dim=1)
 
             diff_color_rand = (diff_shs * light_sh[:, None]).sum(dim=-1)
 
@@ -621,11 +549,7 @@ class PrimDecoder(nn.Module):
 
 
 class RGCASummary(Callable):
-
-    def __call__(
-        self, preds: Dict[str, Any], batch: Dict[str, Any]
-    ) -> Dict[str, th.Tensor]:
-
+    def __call__(self, preds: Dict[str, Any], batch: Dict[str, Any]) -> Dict[str, th.Tensor]:
         diag = {}
 
         dev = preds["diff_color"].device
@@ -672,9 +596,7 @@ class RGCASummary(Callable):
 
         light_sh = preds["headrel_light_sh"]
         h, w = 128, 128
-        py, px = th.meshgrid(
-            th.linspace(1.0, -1.0, h, device=dev), th.linspace(-1.0, 1.0, w, device=dev)
-        )
+        py, px = th.meshgrid(th.linspace(1.0, -1.0, h, device=dev), th.linspace(-1.0, 1.0, w, device=dev))
         pixelcoords = th.stack([px, py], -1)
         zsq = pixelcoords.pow(2).sum(-1, keepdim=True)
         mask = (zsq < 1.0).float()[:, :, :1]
@@ -708,18 +630,12 @@ class RGCASummary(Callable):
             diag["mesh_nml"] = 0.5 * (-preds["mesh_nml"]) + 0.5
 
         diag["depth_nml"] = (
-            diag["alpha"]
-            * (
-                0.5 * -depth2normals(preds["depth"], batch["focal"], batch["princpt"])
-                + 0.5
-            )
+            diag["alpha"] * (0.5 * -depth2normals(preds["depth"], batch["focal"], batch["princpt"]) + 0.5)
             + (1.0 - diag["alpha"]) * 0.5
         )
 
         bdi = make_image_grid_batched(diag, input_is_in_0_1=True)
-        bdi = cv2.resize(
-            bdi, fx=0.5, fy=0.5, dsize=None, interpolation=cv2.INTER_LINEAR
-        )
+        bdi = cv2.resize(bdi, fx=0.5, fy=0.5, dsize=None, interpolation=cv2.INTER_LINEAR)
 
         for k, v in diag.items():
             diag[k] = make_grid(255.0 * v, nrow=16).clip(0, 255).to(th.uint8)
