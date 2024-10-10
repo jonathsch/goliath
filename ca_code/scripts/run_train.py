@@ -33,12 +33,6 @@ def main(config: DictConfig):
 
     loss_fn = load_from_config(config.loss, assets=static_assets).to(device)
 
-    # TODO(julieta) can we remove this?
-    train_loader = DataLoader(
-        train_dataset,
-        **config.dataloader,
-    )
-
     os.makedirs(config.train.ckpt_dir, exist_ok=True)
     if "ckpt" in config.train:
         logger.info(f"loading checkpoint: {config.train.ckpt}")
