@@ -586,13 +586,13 @@ class BodyDataset(Dataset):
             light_intensity, (0, 0, 0, n_lights_all - n_lights), "constant", 0
         )
 
-        segmentation_parts = self.load_segmentation_parts(frame, camera)
-        c, h, w = segmentation_parts.shape
-        # import ipdb; ipdb.set_trace()
-        if h == 1024:
-            with torch.no_grad():
-                segmentation_parts = F.interpolate(segmentation_parts[None, :, :, :], scale_factor=2, mode='bilinear')[0]
-        segmentation_fgbg = segmentation_parts != 0.0
+        # segmentation_parts = self.load_segmentation_parts(frame, camera)
+        # c, h, w = segmentation_parts.shape
+        # # import ipdb; ipdb.set_trace()
+        # if h == 1024:
+        #     with torch.no_grad():
+        #         segmentation_parts = F.interpolate(segmentation_parts[None, :, :, :], scale_factor=2, mode='bilinear')[0]
+        # segmentation_fgbg = segmentation_parts != 0.0
         # color_mean = self.load_color_mean()
         # color_var = self.load_color_variance()
         color = self.load_color(frame)
@@ -623,8 +623,8 @@ class BodyDataset(Dataset):
             # "template_mesh": template_mesh,
             # "light_pattern": light_pattern,
             # "light_pattern_meta": light_pattern_meta,
-            "segmentation_parts": segmentation_parts,
-            "segmentation_fgbg": segmentation_fgbg,
+            # "segmentation_parts": segmentation_parts,
+            # "segmentation_fgbg": segmentation_fgbg,
             # "color_mean": color_mean,
             # "color_variance": color_var,
             # "scan_mesh": scan_mesh,
@@ -781,25 +781,25 @@ if __name__ == "__main__":
             # "402982",
             # "403066",
         ],
-        frames_subset=[
-            "27533",
-            "28585",
-            "28739",
-            "28874",
-            # "29296",
-            # "29728",
-            # "139248",
-            # "140399",
-            # "140436",
-            # "140689",
-            # "140968",
-            # "141333",
-        ]
+        # frames_subset=[
+        #     # "27533",
+        #     # "28585",
+        #     # "28739",
+        #     # "28874",
+        #     # "29296",
+        #     # "29728",
+        #     # "139248",
+        #     # "140399",
+        #     # "140436",
+        #     # "140689",
+        #     # "140968",
+        #     # "141333",
+        # ]
     )
     dataloader = DataLoader(
         dataset,
         batch_size=4,
-        shuffle=True,
+        collate_fn=collate_fn,
         num_workers=4,
     )
 
