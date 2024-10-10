@@ -233,9 +233,8 @@ class BodyDataset(Dataset):
                 return pil_to_tensor(Image.open(BytesIO(png_file.read())))
 
     def load_image(self, frame: int, camera: str) -> Image:
-        zip_path = self.root_path / "image" / f"cam{camera}.zip"
+        # zip_path = self.root_path / "image" / f"cam{camera}.zip"
         avif_path = self.root_path / "image" / f"cam{camera}" / f"{frame:06d}.avif"
-        print(avif_path)
         return pil_to_tensor(Image.open(avif_path))
 
         with zipfile.ZipFile(zip_path, "r") as zipf:
@@ -688,8 +687,7 @@ class BodyDataset(Dataset):
 
         try:
             data = self.get(frame, camera)
-        except Exception as e:
-            raise e
+        except Exception:
             logger.warning(f"error when loading frame_id=`{frame}`, camera_id=`{camera}`, skipping")
             return None
 
