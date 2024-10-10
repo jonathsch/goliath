@@ -112,7 +112,7 @@ class BodyDataset(Dataset):
 
     def asset_exists(self, frame: int) -> bool:
         if self.capture_type in [CaptureType.HEAD, CaptureType.HAND]:
-            return frame in self.get_frame_list(fully_lit_only=self.fully_lit_only)
+            return frame in self.get_frame_list(fully_lit_only=self.fully_lit_only, first_n_only=self.first_n_only)
         return True
 
     @lru_cache(maxsize=1)
@@ -186,7 +186,7 @@ class BodyDataset(Dataset):
         if not (fully_lit_only or partially_lit_only) or self.capture_type is CaptureType.BODY:
             # All frames in Body captures are fully lit
             frame_list = list(frame_list)
-            if first_n_only:
+            if first_n_only is not None:
                 frame_list = sorted(frame_list)[:first_n_only]
             return self.filter_frame_list(frame_list)
 
@@ -540,7 +540,7 @@ class BodyDataset(Dataset):
         return row
 
     def _get_for_head(self, frame: int, camera: str) -> Dict[str, Any]:
-        is_fully_lit_frame: bool = frame in self.get_frame_list(fully_lit_only=True)
+        is_fully_lit_frame: bool = frame in self.get_frame_list(fully_lit_only=True, first_n_only=self.first_n_only)
         head_pose = self.load_head_pose(frame)
         image = self.load_image(frame, camera)
 
@@ -608,7 +608,7 @@ class BodyDataset(Dataset):
         return row
 
     def _get_for_hand(self, frame: int, camera: str) -> Dict[str, Any]:
-        is_fully_lit_frame: bool = frame in self.get_frame_list(fully_lit_only=True)
+        is_fully_lit_frame: bool = frame in self.get_frame_list(fully_lit_only=True, first_n_only=self.first_n_only)
         image = self.load_image(frame, camera)
         if not self.partially_lit_only:
             kpts = self.load_3d_keypoints(frame)
@@ -691,7 +691,7 @@ class BodyDataset(Dataset):
             first_n_only=self.first_n_only,
         )
 
-        print(f"num frames: {len(frame_list)}")
+        # print(f"num frames: {len(frame_list)}")
 
         camera_list = self.get_camera_list()
 
@@ -711,6 +711,7 @@ class BodyDataset(Dataset):
             self.get_frame_list(
                 fully_lit_only=self.fully_lit_only,
                 partially_lit_only=self.partially_lit_only,
+                first_n_only=self.first_n_only
             )
         ) * len(self.get_camera_list())
 
