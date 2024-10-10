@@ -9,30 +9,21 @@ import json
 import logging
 import zipfile
 from collections import namedtuple
-
 from enum import Enum
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
-import cv2
 import numpy as np
-
 import pandas as pd
-import pillow_avif
 import torch
 import torch.nn.functional as F
-
-from ca_code.utils.obj import load_obj
 from PIL import Image
-from pytorch3d.io import load_ply, save_ply
-from scipy.ndimage.morphology import binary_dilation
+from pytorch3d.io import load_ply
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.dataloader import default_collate
 from torchvision.transforms.functional import pil_to_tensor
-
-from tqdm import tqdm
 
 # There are a lot of frame-wise assets. Avoid re-fetching those when we
 # switch cameras
@@ -57,9 +48,7 @@ def get_capture_type(capture_name: str) -> CaptureType:
         return CaptureType.HAND
     if "Body" in capture_name:
         return CaptureType.BODY
-    raise ValueError(
-        f"Could not determine capture type from capture name: {capture_name}"
-    )
+    raise ValueError(f"Could not determine capture type from capture name: {capture_name}")
 
 
 class BodyDataset(Dataset):
@@ -112,7 +101,7 @@ class BodyDataset(Dataset):
         self.cameras = list(self.get_camera_calibration().keys())
 
         self.frames_subset = set(frames_subset or {})
-        self.frames_subset = set(map(int, self.frames_subset))        
+        self.frames_subset = set(map(int, self.frames_subset))
 
     @lru_cache(maxsize=1)
     def load_shared_assets(self) -> Dict[str, Any]:
@@ -134,9 +123,9 @@ class BodyDataset(Dataset):
         # We might have images for fewer cameras than there are listed in the json file
         image_zips = set([x for x in (self.root_path / "image").iterdir() if x.is_file()])
         image_zips = set([x.name.split(".")[0][3:] for x in image_zips])
-        camera_params = {cid: cparams for cid, cparams in camera_params.items() if cid in image_zips} 
+        camera_params = {cid: cparams for cid, cparams in camera_params.items() if cid in image_zips}
         logger.info(f"Left with {len(camera_params)} cameras after filtering for zips present in image/ folder")
-        
+
         # Filter for cameras in the passed subset
         if self.cameras_subset:
             cameras_subset = set(self.cameras_subset)  # No-op if already a set
@@ -187,21 +176,16 @@ class BodyDataset(Dataset):
         # fully lit only and partially lit only cannot be enabled at the same time
         assert not (fully_lit_only and partially_lit_only)
 
-        df = pd.read_csv(self.root_path / f"frame_splits_list.csv")
+        df = pd.read_csv(self.root_path / "frame_splits_list.csv")
         frame_list = df[df.split == self.split].frame.tolist()
 
-        if (
-            not (fully_lit_only or partially_lit_only)
-            or self.capture_type is CaptureType.BODY
-        ):
+        if not (fully_lit_only or partially_lit_only) or self.capture_type is CaptureType.BODY:
             # All frames in Body captures are fully lit
             frame_list = list(frame_list)
-            return self.filter_frame_list(frame_list) 
+            return self.filter_frame_list(frame_list)
 
         if fully_lit_only:
-            fully_lit = {
-                frame for frame, index in self.load_light_pattern() if index == 0
-            }
+            fully_lit = {frame for frame, index in self.load_light_pattern() if index == 0}
             frame_list = [f for f in fully_lit if f in frame_list]
             return self.filter_frame_list(frame_list)
 
@@ -214,7 +198,7 @@ class BodyDataset(Dataset):
                 if len(light_pattern[index]["light_index_durations"]) == 5
             }
             frame_list = [f for f in partially_lit if f in frame_list]
-            return self.filter_frame_list(frame_list) 
+            return self.filter_frame_list(frame_list)
 
     @lru_cache(maxsize=CACHE_LENGTH)
     def load_3d_keypoints(self, frame: int) -> Optional[Dict[str, Any]]:
@@ -227,9 +211,7 @@ class BodyDataset(Dataset):
             with zipf.open(f"{frame:06d}.json", "r") as json_file:
                 return json.load(json_file)
 
-    def load_segmentation_parts(
-        self, frame: int, camera: str
-    ) -> Optional[torch.Tensor]:
+    def load_segmentation_parts(self, frame: int, camera: str) -> Optional[torch.Tensor]:
         if not self.asset_exists(frame):
             # Asset only exists for fully lit frames
             return None
@@ -271,16 +253,12 @@ class BodyDataset(Dataset):
 
     @lru_cache(maxsize=1)
     def load_registration_vertices_mean(self) -> np.ndarray:
-        mean_path = (
-            self.root_path / "kinematic_tracking" / "registration_vertices_mean.npy"
-        )
+        mean_path = self.root_path / "kinematic_tracking" / "registration_vertices_mean.npy"
         return np.load(mean_path)
 
     @lru_cache(maxsize=1)
     def load_registration_vertices_variance(self) -> float:
-        verts_path = (
-            self.root_path / "kinematic_tracking" / "registration_vertices_variance.txt"
-        )
+        verts_path = self.root_path / "kinematic_tracking" / "registration_vertices_variance.txt"
         with open(verts_path, "r") as f:
             return float(f.read())
 
@@ -293,9 +271,7 @@ class BodyDataset(Dataset):
         zip_path = self.root_path / "kinematic_tracking" / "pose.zip"
         with zipfile.ZipFile(zip_path, "r") as zipf:
             with zipf.open(f"pose/{frame:06d}.txt", "r") as f:
-                return np.array(
-                    [float(i) for i in f.read().splitlines()], dtype=np.float32
-                )
+                return np.array([float(i) for i in f.read().splitlines()], dtype=np.float32)
 
     @lru_cache(maxsize=1)
     def load_template_mesh(self) -> torch.Tensor:  # Polygon:
@@ -305,7 +281,6 @@ class BodyDataset(Dataset):
             return vertices  # Polygon(vertices=vertices, faces=faces)
 
     @lru_cache(maxsize=1)
-
     def load_floor_transforms(self) -> np.ndarray:
         floor_transform_path = self.root_path / "floor_transformation.txt"
         cam2gp = np.loadtxt(floor_transform_path, dtype=np.float64)
@@ -351,10 +326,8 @@ class BodyDataset(Dataset):
         try:
             img = Image.open(png_path)
             return pil_to_tensor(img)
-        except Exception as e:
-            logger.warning(
-                f"error when loading color mean at `{png_path}`, skipping"
-            )
+        except Exception:
+            logger.warning(f"error when loading color mean at `{png_path}`, skipping")
             return None
 
     @lru_cache(maxsize=1)
@@ -393,9 +366,7 @@ class BodyDataset(Dataset):
             with zipf.open(f"{frame:06d}.txt", "r") as txt_file:
                 lines = txt_file.read().decode("utf-8").splitlines()
                 rows = [line.split(" ") for line in lines]
-                return np.array(
-                    [[float(i) for i in row] for row in rows], dtype=np.float32
-                )
+                return np.array([[float(i) for i in row] for row in rows], dtype=np.float32)
 
     @lru_cache(maxsize=CACHE_LENGTH)
     def load_background(self, camera: str) -> torch.Tensor:
@@ -573,18 +544,12 @@ class BodyDataset(Dataset):
         light_pattern_meta = self.load_light_pattern_meta()
         light_pos_all = torch.FloatTensor(light_pattern_meta["light_positions"])
         n_lights_all = light_pos_all.shape[0]
-        lightinfo = torch.IntTensor(
-            light_pattern_meta["light_patterns"][light_pattern[frame]][
-                "light_index_durations"
-            ]
-        )
+        lightinfo = torch.IntTensor(light_pattern_meta["light_patterns"][light_pattern[frame]]["light_index_durations"])
         n_lights = lightinfo.shape[0]
         light_pos = light_pos_all[lightinfo[:, 0]]
         light_intensity = lightinfo[:, 1:].float() / 5555.0
         light_pos = F.pad(light_pos, (0, 0, 0, n_lights_all - n_lights), "constant", 0)
-        light_intensity = F.pad(
-            light_intensity, (0, 0, 0, n_lights_all - n_lights), "constant", 0
-        )
+        light_intensity = F.pad(light_intensity, (0, 0, 0, n_lights_all - n_lights), "constant", 0)
 
         # segmentation_parts = self.load_segmentation_parts(frame, camera)
         # c, h, w = segmentation_parts.shape
@@ -599,9 +564,7 @@ class BodyDataset(Dataset):
         # scan_mesh = self.load_scan_mesh(frame)
         background = self.load_background(camera)[:3]
         if image.size() != background.size():
-            background = F.interpolate(
-                background[None], size=(image.shape[1], image.shape[2]), mode="bilinear"
-            )[0]
+            background = F.interpolate(background[None], size=(image.shape[1], image.shape[2]), mode="bilinear")[0]
 
         camera_parameters = self.get_camera_parameters(camera)
 
@@ -647,17 +610,13 @@ class BodyDataset(Dataset):
         light_pos_all = torch.FloatTensor(light_pattern_meta["light_positions"])
         n_lights_all = light_pos_all.shape[0]
         lightinfo = torch.IntTensor(
-            light_pattern_meta["light_patterns"][light_pattern[frame]][
-                "light_index_durations"
-            ]
+            light_pattern_meta["light_patterns"][light_pattern[frame]]["light_index_durations"]
         ).long()
         n_lights = lightinfo.shape[0]
         light_pos = light_pos_all[lightinfo[:, 0]]
         light_intensity = lightinfo[:, 1:].float() / 5555.0
         light_pos = F.pad(light_pos, (0, 0, 0, n_lights_all - n_lights), "constant", 0)
-        light_intensity = F.pad(
-            light_intensity, (0, 0, 0, n_lights_all - n_lights), "constant", 0
-        )
+        light_intensity = F.pad(light_intensity, (0, 0, 0, n_lights_all - n_lights), "constant", 0)
 
         if not self.partially_lit_only:
             # segmentation_parts = self.load_segmentation_parts(frame, camera)
@@ -712,7 +671,6 @@ class BodyDataset(Dataset):
         else:
             return sample
 
-
     def __getitem__(self, idx):
         # TODO(julieta) don't filter every time (it's cached, but still bad practice here)
         frame_list = self.get_frame_list(
@@ -726,14 +684,11 @@ class BodyDataset(Dataset):
 
         try:
             data = self.get(frame, camera)
-        except Exception as e:
-            logger.warning(
-                f"error when loading frame_id=`{frame}`, camera_id=`{camera}`, skipping"
-            )
+        except Exception:
+            logger.warning(f"error when loading frame_id=`{frame}`, camera_id=`{camera}`, skipping")
             return None
 
         return data
-
 
     def __len__(self):
         return len(
