@@ -60,6 +60,7 @@ class BodyDataset(Dataset):
         split: str,
         fully_lit_only: bool = True,
         partially_lit_only: bool = False,
+        first_n_only: Optional[int] = None,
         cameras_subset: Optional[Iterable[str]] = None,
         frames_subset: Optional[Iterable[int]] = None,
     ):
@@ -82,6 +83,7 @@ class BodyDataset(Dataset):
         self.split: str = split
         self.fully_lit_only: bool = fully_lit_only
         self.partially_lit_only: bool = partially_lit_only
+        self.first_n_only: Optional[int] = first_n_only
 
         self.capture_type: CaptureType = get_capture_type(self.root_path.name)
         self._get_fn: Callable = {
@@ -173,6 +175,7 @@ class BodyDataset(Dataset):
         self,
         fully_lit_only: bool = False,
         partially_lit_only: bool = False,
+        first_n_only: Optional[int] = None,
     ) -> List[int]:
         # fully lit only and partially lit only cannot be enabled at the same time
         assert not (fully_lit_only and partially_lit_only)
@@ -183,6 +186,8 @@ class BodyDataset(Dataset):
         if not (fully_lit_only or partially_lit_only) or self.capture_type is CaptureType.BODY:
             # All frames in Body captures are fully lit
             frame_list = list(frame_list)
+            if first_n_only:
+                frame_list = sorted(frame_list)[:first_n_only]
             return self.filter_frame_list(frame_list)
 
         if fully_lit_only:
@@ -199,6 +204,10 @@ class BodyDataset(Dataset):
                 if len(light_pattern[index]["light_index_durations"]) == 5
             }
             frame_list = [f for f in partially_lit if f in frame_list]
+            
+            if first_n_only:
+                frame_list = sorted(frame_list)[:first_n_only]
+            
             return self.filter_frame_list(frame_list)
 
     @lru_cache(maxsize=CACHE_LENGTH)
@@ -679,7 +688,11 @@ class BodyDataset(Dataset):
         frame_list = self.get_frame_list(
             fully_lit_only=self.fully_lit_only,
             partially_lit_only=self.partially_lit_only,
+            first_n_only=self.first_n_only,
         )
+
+        print(f"num frames: {len(frame_list)}")
+
         camera_list = self.get_camera_list()
 
         frame = frame_list[idx // len(camera_list)]
@@ -725,6 +738,7 @@ if __name__ == "__main__":
         split=args.split,
         shared_assets_path=None,
         fully_lit_only=False,
+        first_n_only=5000,
         cameras_subset=[
             "401645",
             "401964",
@@ -767,3 +781,4 @@ if __name__ == "__main__":
 
     for i, row in enumerate(dataloader):
         print(i)
+        quit()
