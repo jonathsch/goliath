@@ -208,7 +208,7 @@ def train(
             bg_list = batch["background"].detach().split(1, dim=0)  # [3, 2048, 1337]
             bg = (th.cat(bg_list, dim=-1).squeeze() * 255).to(dtype=th.uint8, device="cpu")
             summaries["background"] = bg
-            wandb_run.log({f"images/{name}": wandb.Image(value) for name, value in summaries.items()}, step=iteration)
+            wandb_run.log({f"images/{name}": wandb.Image(value, file_type="jpg") for name, value in summaries.items()}, step=iteration)
 
         if saving_enabled and iteration is not None and iteration % config.train.ckpt_every_n_steps == 0:
             logger.info(f"iter={iteration}: saving checkpoint to `{config.train.ckpt_dir}`")
