@@ -134,7 +134,7 @@ class AutoEncoder(nn.Module):
 
     def forward(
         self,
-        head_pose: th.Tensor,
+        # head_pose: th.Tensor,
         campos: th.Tensor,
         registration_vertices: th.Tensor,
         color: th.Tensor,
@@ -154,17 +154,20 @@ class AutoEncoder(nn.Module):
     ) -> Dict[str, Any]:
         light_intensity = light_intensity.expand(-1, -1, 3)
 
+        head_pose_4x4 = th.eye(4, device=campos.device).unsqueeze(0).expand(campos.shape[0], -1, -1)
+        head_pose = head_pose_4x4[:, :3, :]
+
         # convert everything into head relative coordinates
-        head_pose_4x4 = th.cat([head_pose, th.zeros_like(head_pose[:, :1, :])], dim=1)
+        # head_pose_4x4 = th.cat([head_pose, th.zeros_like(head_pose[:, :1, :])], dim=1)
         head_pose_4x4[:, 3, 3] = 1.0
-        headrel_Rt = Rt @ head_pose_4x4
+        headrel_Rt = Rt # @ head_pose_4x4
         headrel_campos = ((campos - head_pose[:, :3, 3])[:, None] @ head_pose[:, :3, :3])[:, 0]
         headrel_light_pos = (light_pos - head_pose[:, None, :3, 3]) @ head_pose[:, :3, :3]
         headrel_light_dir = F.normalize(headrel_light_pos, p=2, dim=-1)
         sh_coeffs = sh.dir2sh_torch(self.n_diff_sh, headrel_light_dir)
         headrel_light_sh = (sh_coeffs[:, :, None] * light_intensity[..., None]).sum(dim=1)
         if lightrot is not None:
-            lightrot = lightrot @ head_pose[:, :3, :3]
+            lightrot = lightrot # @ head_pose[:, :3, :3]
         # encoding
         enc_preds = self.encoder(registration_vertices, color)
         embs = enc_preds["embs"]
@@ -473,6 +476,7 @@ class PrimDecoder(nn.Module):
         albedo = self.albedo.expand(B, -1, -1)
 
         # compute diffuse color
+        print(albedo.shape, diff_shs.shape, headrel_light_sh.shape)
         diff_color = albedo * (diff_shs * headrel_light_sh[:, None]).sum(dim=-1)
 
         # compute specular color
