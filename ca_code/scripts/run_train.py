@@ -14,7 +14,8 @@ from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 
 import wandb
-from ca_code.utils.dataloader import BodyDataset, collate_fn
+# from ca_code.utils.dataloader import BodyDataset, collate_fn
+from ca_code.utils.becominglit_dataloader import BecomingLitDataset, collate_fn
 from ca_code.utils.module_loader import build_optimizer
 from ca_code.utils.train import load_checkpoint, load_from_config, train
 
@@ -24,7 +25,8 @@ logger = logging.getLogger(__name__)
 def main(config: DictConfig):
     device = th.device("cuda:0")
 
-    train_dataset = BodyDataset(**config.data)
+    # train_dataset = BodyDataset(**config.data)
+    train_dataset = BecomingLitDataset(**config.data)
     batch_filter_fn = train_dataset.batch_filter
 
     static_assets = AttrDict(train_dataset.static_assets)
