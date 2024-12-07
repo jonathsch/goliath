@@ -23,6 +23,8 @@ from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.dataloader import default_collate
 from torchvision.transforms.functional import pil_to_tensor
 
+from ca_code.utils.image import srgb2linear
+
 # There are a lot of frame-wise assets. Avoid re-fetching those when we
 # switch cameras
 CACHE_LENGTH = 16
@@ -197,8 +199,8 @@ class BecomingLitDataset(Dataset):
 
         # NOTE: Optional black level subtraction goes here
 
-        batch["image"] = (batch["image"] / 255.0).clamp(0, 1)
-        batch["background"] = (batch["background"] / 255.0).clamp(0, 1)
+        batch["image"] = srgb2linear((batch["image"] / 255.0)).clamp(0, 1)
+        batch["background"] = srgb2linear((batch["background"] / 255.0)).clamp(0, 1)
 
     @property
     def static_assets(self) -> Dict[str, Any]:
@@ -344,16 +346,24 @@ def collate_fn(items):
     return default_collate(items) if len(items) > 0 else None
 
 if __name__ == "__main__":
+    import trimesh
     dataset = BecomingLitDataset(
-        root_path=Path("/mnt/cluster/pegasus/jschmidt"),
+        root_path=Path("/cluster/pegasus/jschmidt"),
         subject="9997",
         sequence="FREE",
         fully_lit_only=False,
     )
 
-    sample = dataset[0]
-    for k, v in sample.items():
-        if isinstance(v, torch.Tensor):
-            print(k, v.shape)
-        else:
-            print(k, v)
+    topology = dataset.static_assets["topology"]
+    for k, v in topology.items():
+        print(k, v.shape)
+
+    mesh = trimesh.Trimesh(vertices=topology["v"].cpu().numpy(), faces=topology["vi"].cpu().numpy())
+    mesh.export("topology.obj")
+
+    # sample = dataset[0]
+    # for k, v in sample.items():
+    #     if isinstance(v, torch.Tensor):
+    #         print(k, v.shape)
+    #     else:
+    #         print(k, v)
