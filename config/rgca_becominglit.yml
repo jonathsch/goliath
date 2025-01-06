@@ -116,3 +116,6 @@ test:
     subject: ${sid}
     sequence: ${sequence}
     fully_lit_only: False
+
+self_reenact:
+  tgt_seq: ???
