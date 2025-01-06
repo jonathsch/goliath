@@ -8,31 +8,31 @@ import os
 import sys
 from typing import List
 
+import dotenv
 import torch as th
 from addict import Dict as AttrDict
-
-# from ca_code.utils.dataloader import BodyDataset, collate_fn
-from ca_code.utils.becominglit_dataloader import BecomingLitDataset, collate_fn
-from ca_code.utils.envmap import envmap_to_image, envmap_to_mirrorball
-from ca_code.utils.image import linear2srgb
-from ca_code.utils.lbs import LBSModule
-
-from ca_code.utils.light_decorator import EnvSpinDecorator, SingleLightCycleDecorator
-from ca_code.utils.module_loader import load_from_config
-from ca_code.utils.train import load_checkpoint, to_device
-
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 from torchvision.utils import make_grid, save_image
-
 from tqdm import tqdm
+
+# from ca_code.utils.dataloader import BodyDataset, collate_fn
+from ca_code.utils.becominglit_dataloader import BecomingLitDataset, collate_fn
+from ca_code.utils.image import linear2srgb
+from ca_code.utils.light_decorator import EnvSpinDecorator, SingleLightCycleDecorator
+from ca_code.utils.module_loader import load_from_config
+from ca_code.utils.train import load_checkpoint, to_device
 
 logger = logging.getLogger(__name__)
 
 
 def main(config: DictConfig):
     device = th.device("cuda:0")
-
+    
+    remote = os.getenv("REMOTE")
+    if remote:
+        config.train.run_dir = "/mnt" + config.train.run_dir
+    
     model_dir = config.train.run_dir
     os.makedirs(f"{model_dir}/tmp", exist_ok=True)
 
@@ -42,13 +42,13 @@ def main(config: DictConfig):
         ckpt_path = f"{model_dir}/checkpoints/latest.pt"
         # ckpt_path = f"{model_dir}/checkpoints/600000.pt"
 
-    config.data.split = "test"
+    config.data.root_path = os.getenv("BECOMINGLIT_DATASET_PATH")
     config.data.fully_lit_only = True
     config.data.partially_lit_only = False
 
     # dataset = BodyDataset(**config.data)
     data_config = config.data
-    data_config.pop("split")
+
     dataset = BecomingLitDataset(**data_config)
     batch_filter_fn = dataset.batch_filter
 
@@ -138,6 +138,7 @@ def main(config: DictConfig):
 
 
 if __name__ == "__main__":
+    dotenv.load_dotenv()
 
     config_path: str = sys.argv[1]
     console_commands: List[str] = sys.argv[2:]
