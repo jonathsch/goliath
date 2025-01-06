@@ -37,6 +37,7 @@ class BecomingLitDataset(Dataset):
         partially_lit_only: bool = False,
         cameras_subset: Optional[Iterable[str]] = None,
         frames_subset: Optional[Iterable[int]] = None,
+        lights_subset: Optional[Iterable[int]] = None,
     ):
         self.root_path: Path = Path(root_path)
         self.subject: str = str(subject)
@@ -115,7 +116,7 @@ class BecomingLitDataset(Dataset):
         if self.frames_subset:
             frames = frames.intersection(self.frames_subset)
 
-        return list(frames)
+        return sorted(list(frames))
 
     @lru_cache(maxsize=2)
     def get_frame_list(self, fully_lit_only: bool = False, partially_lit_only: bool = False) -> List[int]:
