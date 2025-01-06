@@ -1,25 +1,19 @@
 # Copyright (c) Jonathan Schmidt, Inc. and affiliates.
 # All rights reserved.
 
-import argparse
 import json
 import logging
-import zipfile
-from collections import namedtuple
-from enum import Enum
 from functools import lru_cache
-from io import BytesIO
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
-import pandas as pd
-import pillow_avif  # noqa: F401
+import pillow_avif  # noqa
 import torch
 import torch.nn.functional as F
 from PIL import Image
 from pytorch3d.io import load_ply
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import Dataset
 from torch.utils.data.dataloader import default_collate
 from torchvision.transforms.functional import pil_to_tensor
 
@@ -92,7 +86,7 @@ class BecomingLitDataset(Dataset):
     @lru_cache(maxsize=1)
     def get_camera_parameters(self, cam_id: str) -> Dict[str, Any]:
         K, w2c = self.get_camera_calibration()[cam_id]
-        R, t = w2c[:3, :3], w2c[:3, 3]
+        R = w2c[:3, :3]
         focal = K[:2, :2]
         princpt = K[:2, 2]
 
@@ -112,13 +106,15 @@ class BecomingLitDataset(Dataset):
     def filter_frame_list(self, frame_list: List[int]):
         frames = set(frame_list)
 
-        vert_files = [p for p in (self.seq_folder / "flame_tracking" / "vertices").iterdir() if p.is_file and p.suffix == ".ply"]
+        vert_files = [
+            p for p in (self.seq_folder / "flame_tracking" / "vertices").iterdir() if p.is_file and p.suffix == ".ply"
+        ]
         vert_frames = set([int(p.stem.split("_")[-1]) for p in vert_files])
 
         frames = frames.intersection(vert_frames)
         if self.frames_subset:
             frames = frames.intersection(self.frames_subset)
-        
+
         return list(frames)
 
     @lru_cache(maxsize=2)
@@ -140,7 +136,7 @@ class BecomingLitDataset(Dataset):
         #     return self.filter_frame_list(frame_list)
         with open(self.seq_folder / "light_pattern_per_frame.json", mode="r") as f:
             light_pattern = json.load(f)
-        
+
         if not (fully_lit_only or partially_lit_only):
             # frame_list = df.frame_id.tolist()
             frame_list = [int(fid) for (fid, _) in light_pattern]
@@ -177,7 +173,7 @@ class BecomingLitDataset(Dataset):
 
     @lru_cache(maxsize=1)
     def load_registration_vertices_variance(self) -> float:
-        verts_path = self.seq_folder / "flame_tracking" / "vertices"/ "vertices_var.txt"
+        verts_path = self.seq_folder / "flame_tracking" / "vertices" / "vertices_var.txt"
         with open(verts_path, "r") as f:
             return float(f.read())
 
@@ -190,7 +186,7 @@ class BecomingLitDataset(Dataset):
 
     @lru_cache(maxsize=1)
     def load_color_variance(self) -> float:
-        color_var_path = self.seq_folder / "flame_tracking" / "color_variance.txt"
+        # color_var_path = self.seq_folder / "flame_tracking" / "color_variance.txt"
         # with open(color_var_path, "r") as f:
         #     return float(f.read())
         return 458.0  # TODO: Fix this
@@ -218,11 +214,11 @@ class BecomingLitDataset(Dataset):
         light_pattern_path = self.subject_folder / "calibration" / "light_pattern_metadata.json"
         with open(light_pattern_path, "r") as f:
             return json.load(f)
-    
+
     @lru_cache(maxsize=CACHE_LENGTH)
     def load_head_pose(self, frame: int) -> np.ndarray:
         pose_path = self.seq_folder / "flame_tracking" / "head_poses" / f"frame_{frame:06d}.npy"
-        pose = np.load(pose_path) # (4, 4)
+        pose = np.load(pose_path)  # (4, 4)
         return pose.astype(np.float32)
 
     def batch_filter(self, batch):
@@ -242,12 +238,12 @@ class BecomingLitDataset(Dataset):
             **shared_assets,
             **assets,
         }
-    
+
     @lru_cache(maxsize=1)
     def load_shared_assets(self) -> Dict[str, Any]:
         topology = torch.load(self.root_path / "topology.pt")
         return {"topology": topology}
-    
+
     def _static_get_fn(self) -> Dict[str, Any]:
         reg_verts_mean = self.load_registration_vertices_mean()
         reg_verts_var = self.load_registration_vertices_variance()
@@ -339,7 +335,7 @@ class BecomingLitDataset(Dataset):
             **camera_parameters,
         }
         return row
-    
+
     def get(self, frame: int, camera: str) -> Dict[str, Any]:
         sample = self._get_fn(frame, camera)
         missing_assets = [k for k, v in sample.items() if v is None]
@@ -350,7 +346,7 @@ class BecomingLitDataset(Dataset):
             return None
         else:
             return sample
-    
+
     def __getitem__(self, idx):
         frame_list = self.get_frame_list(
             fully_lit_only=self.fully_lit_only,
@@ -373,6 +369,7 @@ class BecomingLitDataset(Dataset):
             )
         ) * len(self.get_camera_list())
 
+
 def worker_init_fn(worker_id: int):
     worker_seed = (torch.initial_seed() + worker_id) % 2**32
     np.random.seed(worker_seed)
@@ -384,25 +381,26 @@ def collate_fn(items):
     items = [item for item in items if item is not None]
     return default_collate(items) if len(items) > 0 else None
 
+
 if __name__ == "__main__":
-    import trimesh
+    import os
+
+    import dotenv
+
+    dotenv.load_dotenv()
+
+    dataset_path = os.getenv("BECOMINGLIT_DATASET_PATH")
+    print(f"Dataset path: {dataset_path}")
     dataset = BecomingLitDataset(
-        root_path=Path("/cluster/pegasus/jschmidt"),
-        subject="9997",
-        sequence="FREE",
+        root_path=Path(dataset_path),
+        subject="1001",
+        sequence="EXP-1",
         fully_lit_only=False,
     )
 
-    topology = dataset.static_assets["topology"]
-    for k, v in topology.items():
-        print(k, v.shape)
-
-    mesh = trimesh.Trimesh(vertices=topology["v"].cpu().numpy(), faces=topology["vi"].cpu().numpy())
-    mesh.export("topology.obj")
-
-    # sample = dataset[0]
-    # for k, v in sample.items():
-    #     if isinstance(v, torch.Tensor):
-    #         print(k, v.shape)
-    #     else:
-    #         print(k, v)
+    sample = dataset[0]
+    for k, v in sample.items():
+        if isinstance(v, torch.Tensor):
+            print(k, v.shape)
+        else:
+            print(k, v)
