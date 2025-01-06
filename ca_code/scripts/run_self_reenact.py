@@ -25,6 +25,7 @@ from tqdm import tqdm
 # from ca_code.utils.dataloader import BodyDataset, collate_fn
 from ca_code.utils.becominglit_dataloader import BecomingLitDataset, collate_fn
 from ca_code.utils.image import linear2srgb
+from ca_code.utils.light_decorator import EnvSpinDecorator
 from ca_code.utils.module_loader import load_from_config
 from ca_code.utils.train import load_checkpoint, to_device
 
@@ -128,6 +129,31 @@ def main(config: DictConfig):
 
     os.system(
         f"ffmpeg -y -framerate 24 -i '{model_dir}/tmp/%d.png' -b:v 8000000 -c:v mpeg4 -g 10 -pix_fmt yuv420p {model_dir}/_self_reenact_{config.self_reenact.tgt_seq}.mp4 -y"
+    )
+
+    model_e = EnvSpinDecorator(
+        model,
+        envmap_path="./envmaps/metro_noord_1k.hdr",
+        ydown=True,
+        env_scale=8.0,
+    ).to(device)
+
+    # forward
+    for i, batch in enumerate(tqdm(loader)):
+        batch = to_device(batch, device)
+        batch_filter_fn(batch)
+        with th.no_grad():
+            preds = model_e(**batch, index=[i])
+
+        # visualizing
+        rgb_preds_grid = make_grid(linear2srgb(preds["rgb"]), nrow=4)
+        save_image(rgb_preds_grid, f"{model_dir}/tmp/{i}.png")
+
+        if i > 256:
+            break
+
+    os.system(
+        f"ffmpeg -y -framerate 72 -i '{model_dir}/tmp/%d.png' -b:v 8000000 -c:v mpeg4 -pix_fmt yuv420p {model_dir}/_self_reenact_{config.self_reenact.tgt_seq}_env.mp4 -y"
     )
 
 
