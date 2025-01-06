@@ -148,7 +148,16 @@ def train(
     # Loss history for explosion checking.
     loss_history = deque(maxlen=32)
     loss_history.append(np.inf)
-    for batch in train_data:
+    
+    trainloader_iter = iter(train_data)
+
+    for _ in range(config.train.n_max_iters):
+        try:
+            batch = next(trainloader_iter)
+        except StopIteration:
+            trainloader_iter = iter(train_data)
+            batch = next(trainloader_iter)
+
         if batch is None:
             logger.info("skipping empty batch")
             continue

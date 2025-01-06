@@ -57,9 +57,10 @@ def main(config: DictConfig):
     # train_writer = SummaryWriter(log_dir=config.train.tb_dir)
     wandb_run = wandb.init(
         project="RGCA",
+        dir=config.train.run_dir,
         name=config.train.run_id,
         group=config.train.tag,
-        tags=[config.sid, config.model_name],
+        tags=[str(config.sid), config.model_name],
         config=OmegaConf.to_container(config),
     )
 

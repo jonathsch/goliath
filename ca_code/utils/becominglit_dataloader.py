@@ -45,7 +45,7 @@ class BecomingLitDataset(Dataset):
         frames_subset: Optional[Iterable[int]] = None,
     ):
         self.root_path: Path = Path(root_path)
-        self.subject: str = subject
+        self.subject: str = str(subject)
         self.sequence: str = sequence
         self.fully_lit_only: bool = fully_lit_only
         self.partially_lit_only: bool = partially_lit_only
@@ -75,7 +75,7 @@ class BecomingLitDataset(Dataset):
         # Intrinsics (shared across cameras)
         intrinsic = camera_calibration["cam_data"]
         K = torch.tensor([[intrinsic["fx"], 0, intrinsic["cx"]], [0, intrinsic["fy"], intrinsic["cy"]], [0, 0, 1]])
-        K[:2, :2] /= self.downscale_factor  # Downscale intrinsics (pixel units)
+        K[:2, :] /= self.downscale_factor  # Downscale intrinsics (pixel units)
 
         # World to camera matrices
         w2c = {cid: torch.tensor(w2c) for cid, w2c in camera_calibration["world_to_cam"].items()}
@@ -99,7 +99,7 @@ class BecomingLitDataset(Dataset):
         return {
             "Rt": w2c,
             "K": K,
-            "campos": R.T @ -t,
+            "campos": torch.linalg.inv(w2c)[:3, 3],
             "camrot": R,
             "focal": focal,
             "princpt": princpt,
@@ -110,48 +110,74 @@ class BecomingLitDataset(Dataset):
         return self.cameras
 
     def filter_frame_list(self, frame_list: List[int]):
-        frames = frame_list
+        frames = set(frame_list)
+
+        vert_files = [p for p in (self.seq_folder / "flame_tracking" / "vertices").iterdir() if p.is_file and p.suffix == ".ply"]
+        vert_frames = set([int(p.stem.split("_")[-1]) for p in vert_files])
+
+        frames = frames.intersection(vert_frames)
         if self.frames_subset:
-            frames = list(set(frame_list).intersection(self.frames_subset))
-        return frames
+            frames = frames.intersection(self.frames_subset)
+        
+        return list(frames)
 
     @lru_cache(maxsize=2)
     def get_frame_list(self, fully_lit_only: bool = False, partially_lit_only: bool = False) -> List[int]:
         # fully lit only and partially lit only cannot be enabled at the same time
         assert not (fully_lit_only and partially_lit_only)
 
-        df = pd.read_csv(self.seq_folder / "frames.csv")
+        # df = pd.read_csv(self.seq_folder / "light_pattern_per_frame.json")
 
+        # if not (fully_lit_only or partially_lit_only):
+        #     frame_list = df.frame_id.tolist()
+        #     return self.filter_frame_list(frame_list)
+
+        # if fully_lit_only:
+        #     frame_list = df[df.light_pattern == 0].frame_id.tolist()
+        #     return self.filter_frame_list(frame_list)
+        # else:  # partially lit only
+        #     frame_list = df[df.light_pattern != 0].frame_id.tolist()
+        #     return self.filter_frame_list(frame_list)
+        with open(self.seq_folder / "light_pattern_per_frame.json", mode="r") as f:
+            light_pattern = json.load(f)
+        
         if not (fully_lit_only or partially_lit_only):
-            frame_list = df.frame_id.tolist()
+            # frame_list = df.frame_id.tolist()
+            frame_list = [int(fid) for (fid, _) in light_pattern]
             return self.filter_frame_list(frame_list)
 
         if fully_lit_only:
-            frame_list = df[df.light_pattern == 0].frame_id.tolist()
+            # frame_list = df[df.light_pattern == 0].frame_id.tolist()
+            frame_list = [int(fid) for (fid, l_idx) in light_pattern if l_idx == 0]
             return self.filter_frame_list(frame_list)
         else:  # partially lit only
-            frame_list = df[df.light_pattern != 0].frame_id.tolist()
+            # frame_list = df[df.light_pattern != 0].frame_id.tolist()
+            frame_list = [int(fid) for (fid, l_idx) in light_pattern if l_idx != 0]
             return self.filter_frame_list(frame_list)
 
     def load_image(self, frame_id: int, cam_id: str) -> Image.Image:
-        img_path = self.seq_folder / "timesteps" /  f"frame_{frame_id:05d}" / f"img_cc{self.downscale_suffix}" / f"cam_{cam_id}.avif"
+        img_path = self.seq_folder / f"img_cc{self.downscale_suffix}" / f"cam_{cam_id}" / f"frame_{frame_id:06d}.avif"
         return pil_to_tensor(Image.open(img_path))
+
+    def load_alpha(self, frame_id: int, cam_id: str) -> Image.Image:
+        alpha_path = self.seq_folder / "flame_tracking" / "alpha_masks" / f"cam_{cam_id}" / f"frame_{frame_id:06d}.avif"
+        return pil_to_tensor(Image.open(alpha_path))
 
     @lru_cache(maxsize=CACHE_LENGTH)
     def load_registration_vertices(self, frame: int) -> torch.Tensor:
-        ply_path = self.seq_folder / "flame_tracking" / "vertices" / f"frame_{frame}.ply"
+        ply_path = self.seq_folder / "flame_tracking" / "vertices" / f"frame_{frame:06d}.ply"
         with open(ply_path, "rb") as f:
             verts, _ = load_ply(f)
         return verts
 
     @lru_cache(maxsize=1)
     def load_registration_vertices_mean(self) -> np.ndarray:
-        mean_path = self.seq_folder / "flame_tracking" / "flame_vertices_mean.npy"
+        mean_path = self.seq_folder / "flame_tracking" / "vertices" / "vertices_mean.npy"
         return np.load(mean_path)
 
     @lru_cache(maxsize=1)
     def load_registration_vertices_variance(self) -> float:
-        verts_path = self.seq_folder / "flame_tracking" / "flame_vertices_variance.txt"
+        verts_path = self.seq_folder / "flame_tracking" / "vertices"/ "vertices_var.txt"
         with open(verts_path, "r") as f:
             return float(f.read())
 
@@ -167,7 +193,7 @@ class BecomingLitDataset(Dataset):
         color_var_path = self.seq_folder / "flame_tracking" / "color_variance.txt"
         # with open(color_var_path, "r") as f:
         #     return float(f.read())
-        return 0.0  # TODO: Fix this
+        return 458.0  # TODO: Fix this
 
     @lru_cache(maxsize=1)
     def load_color(self, frame: int) -> Optional[torch.Tensor]:
@@ -178,20 +204,26 @@ class BecomingLitDataset(Dataset):
 
     @lru_cache(maxsize=CACHE_LENGTH)
     def load_background(self, camera: str) -> torch.Tensor:
-        png_path = self.subject_folder / "BACKGROUND" / f"image_{camera}_cc.png"
+        png_path = self.subject_folder / "BACKGROUND" / f"cam_{camera}_cc.png"
         return pil_to_tensor(Image.open(png_path))
 
     @lru_cache(maxsize=1)
     def load_light_pattern(self) -> List[Tuple[int]]:
-        light_pattern_path = self.seq_folder / "lights" / "light_pattern_per_frame.json"
+        light_pattern_path = self.seq_folder / "light_pattern_per_frame.json"
         with open(light_pattern_path, "r") as f:
             return json.load(f)
 
     @lru_cache(maxsize=1)
     def load_light_pattern_meta(self) -> Dict[str, Any]:
-        light_pattern_path = self.seq_folder / "lights" / "light_pattern_metadata.json"
+        light_pattern_path = self.subject_folder / "calibration" / "light_pattern_metadata.json"
         with open(light_pattern_path, "r") as f:
             return json.load(f)
+    
+    @lru_cache(maxsize=CACHE_LENGTH)
+    def load_head_pose(self, frame: int) -> np.ndarray:
+        pose_path = self.seq_folder / "flame_tracking" / "head_poses" / f"frame_{frame:06d}.npy"
+        pose = np.load(pose_path) # (4, 4)
+        return pose.astype(np.float32)
 
     def batch_filter(self, batch):
         batch["image"] = batch["image"].float()
@@ -213,7 +245,7 @@ class BecomingLitDataset(Dataset):
     
     @lru_cache(maxsize=1)
     def load_shared_assets(self) -> Dict[str, Any]:
-        topology = torch.load(self.seq_folder / "flame_tracking" / "topology.pt")
+        topology = torch.load(self.root_path / "topology.pt")
         return {"topology": topology}
     
     def _static_get_fn(self) -> Dict[str, Any]:
@@ -236,8 +268,14 @@ class BecomingLitDataset(Dataset):
 
     def _get_fn(self, frame: int, camera: str) -> Dict[str, Any]:
         is_fully_lit_frame: bool = frame in self.get_frame_list(fully_lit_only=True)
-        image = self.load_image(frame, camera)
+        image = self.load_image(frame, camera).float() / 255.0
+        alpha = self.load_alpha(frame, camera).float() / 255.0
+        if image.size() != alpha.size():
+            alpha = F.interpolate(alpha[None], size=(image.shape[1], image.shape[2]), mode="bilinear")[0]
+        image = image * alpha
+        image = (image * 255.0).clamp(0, 255).byte()
 
+        head_pose = self.load_head_pose(frame)
         # kpts = self.load_3d_keypoints(frame)
         reg_verts = self.load_registration_vertices(frame)
         # reg_verts_mean = self.load_registration_vertices_mean()
@@ -268,9 +306,10 @@ class BecomingLitDataset(Dataset):
         # color_var = self.load_color_variance()
         color = self.load_color(frame)
         # scan_mesh = self.load_scan_mesh(frame)
-        background = self.load_background(camera)[:3]
-        if image.size() != background.size():
-            background = F.interpolate(background[None], size=(image.shape[1], image.shape[2]), mode="bilinear")[0]
+        # background = self.load_background(camera)[:3]
+        # if image.size() != background.size():
+        #     background = F.interpolate(background[None], size=(image.shape[1], image.shape[2]), mode="bilinear")[0]
+        background = torch.zeros_like(image)
 
         camera_parameters = self.get_camera_parameters(camera)
 
@@ -278,7 +317,7 @@ class BecomingLitDataset(Dataset):
             "camera_id": camera,
             "frame_id": frame,
             "is_fully_lit_frame": is_fully_lit_frame,
-            # "head_pose": head_pose, # Alredy in head-related coordinates
+            "head_pose": head_pose,
             "image": image,
             "registration_vertices": reg_verts,
             "light_pos": light_pos,

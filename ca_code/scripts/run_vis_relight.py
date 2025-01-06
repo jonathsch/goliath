@@ -11,7 +11,8 @@ from typing import List
 import torch as th
 from addict import Dict as AttrDict
 
-from ca_code.utils.dataloader import BodyDataset, collate_fn
+# from ca_code.utils.dataloader import BodyDataset, collate_fn
+from ca_code.utils.becominglit_dataloader import BecomingLitDataset, collate_fn
 from ca_code.utils.envmap import envmap_to_image, envmap_to_mirrorball
 from ca_code.utils.image import linear2srgb
 from ca_code.utils.lbs import LBSModule
@@ -45,7 +46,10 @@ def main(config: DictConfig):
     config.data.fully_lit_only = True
     config.data.partially_lit_only = False
 
-    dataset = BodyDataset(**config.data)
+    # dataset = BodyDataset(**config.data)
+    data_config = config.data
+    data_config.pop("split")
+    dataset = BecomingLitDataset(**data_config)
     batch_filter_fn = dataset.batch_filter
 
     static_assets = AttrDict(dataset.static_assets)
@@ -54,7 +58,7 @@ def main(config: DictConfig):
     config.dataloader.batch_size = 1
     config.dataloader.num_workers = 4
 
-    dataset.cameras = ["401892"]
+    dataset.cameras = ["222200037"]
 
     loader = DataLoader(
         dataset,
@@ -103,13 +107,13 @@ def main(config: DictConfig):
             break
 
     os.system(
-        f"ffmpeg -y -framerate 30 -i '{model_dir}/tmp/%d.png' -c:v libx264 -g 10 -pix_fmt yuv420p {model_dir}/_point.mp4 -y"
+        f"ffmpeg -y -framerate 24 -i '{model_dir}/tmp/%d.png' -b:v 8000000 -c:v mpeg4 -g 10 -pix_fmt yuv420p {model_dir}/_point.mp4 -y"
     )
 
     # download 1k hdr from https://polyhaven.com/a/metro_noord
     model_e = EnvSpinDecorator(
         model,
-        envmap_path="./metro_noord_1k.hdr",
+        envmap_path="./envmaps/metro_noord_1k.hdr",
         ydown=True,
         env_scale=8.0,
     ).to(device)
@@ -129,7 +133,7 @@ def main(config: DictConfig):
             break
 
     os.system(
-        f"ffmpeg -y -framerate 30 -i '{model_dir}/tmp/%d.png' -c:v libx264 -g 10 -pix_fmt yuv420p {model_dir}/_env.mp4 -y"
+        f"ffmpeg -y -framerate 24 -i '{model_dir}/tmp/%d.png' -b:v 8000000 -c:v mpeg4 -pix_fmt yuv420p {model_dir}/_env.mp4 -y"
     )
 
 

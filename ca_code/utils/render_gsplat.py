@@ -27,10 +27,10 @@ def render(
     bg_color: Optional[th.Tensor] = None,
     block_width: int = 16,
     global_scale: float = 1.0,
-    z_near: float = 0.1,
+    z_near: float = 0.01,
 ):
     means3D = primpos.view(-1, 3).contiguous()
-    scales = primscale.view(-1, 3).contiguous()
+    scales = primscale.view(-1, 3).contiguous() * 0.001
     rotations = primqvec.view(-1, 4).contiguous()
     opacity = opacity.view(-1, 1).contiguous()
     colors = colors.view(-1, 3).contiguous()

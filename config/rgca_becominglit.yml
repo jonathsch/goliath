@@ -1,6 +1,6 @@
-sid: "9997"
-sequence: "FREE"
-root_dir: /mnt/cluster/pegasus/jschmidt/
+sid: "1004"
+sequence: "SEN-01"
+root_dir: /cluster/valinor/jschmidt/becominglit
 
 data:
   root_path: ${root_dir}
@@ -9,7 +9,7 @@ data:
   fully_lit_only: False
 
 dataloader:
-  batch_size: 4
+  batch_size: 8
   num_workers: 8
   prefetch_factor: 2
   pin_memory: True
@@ -34,7 +34,7 @@ model:
     n_color_sh: 3
 
   cal:
-    identity_camera: 400870
+    identity_camera: 222200037
 
   learn_blur: true
 
@@ -94,25 +94,22 @@ optimizer:
 train:
   run_id: "debug" # NOTE: Override this from the cmd line with a unique id
   tag: ${model_name}.${sid}
-  run_dir: runs/${.tag}/${.run_id}
+  run_dir: /cluster/pegasus/jschmidt/logs/goliath/${.tag}/${.run_id}
   tb_dir: ${.run_dir}/tb
   ckpt_dir: ${.run_dir}/checkpoints
 
   # CHANGE ME
   n_max_iters: 200_000
-  log_every_n_steps: 10
-  summary_every_n_steps: 1_000
-  ckpt_every_n_steps: 10_000
-
-
-test_path: ${.run_dir}/test
+  log_every_n_steps: 50
+  summary_every_n_steps: 10_000
+  ckpt_every_n_steps: 50_000
 
 test:
   ckpt:
-    ckpt_path: ${test_path}/checkpoints/600000.pt
+    ckpt_path: ${.run_dir}/checkpoints/latest.pt
     strict: True
     map_location: cuda:0
-  vis_path: ${test_path}/viz
+  vis_path: ${.run_dir}/viz
   log_every_n_steps: 1
   data:
     root_path: ${data.root_path}
