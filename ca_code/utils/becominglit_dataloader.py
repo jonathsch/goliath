@@ -22,6 +22,7 @@ from ca_code.utils.image import srgb2linear
 # There are a lot of frame-wise assets. Avoid re-fetching those when we
 # switch cameras
 CACHE_LENGTH = 16
+NUM_SEQUENCES = 8
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ class BecomingLitDataset(Dataset):
     def subject_folder(self) -> Path:
         return self.root_path / self.subject
 
-    @lru_cache(maxsize=1)
+    @lru_cache(maxsize=NUM_SEQUENCES)
     def get_camera_calibration(self) -> Dict[str, Tuple[torch.Tensor, torch.Tensor]]:
         with open(self.subject_folder / "camera_calibration.json") as f:
             camera_calibration = json.load(f)
@@ -84,7 +85,7 @@ class BecomingLitDataset(Dataset):
 
         return {cid: (K, w2c) for cid, w2c in w2c.items()}
 
-    @lru_cache(maxsize=1)
+    @lru_cache(maxsize=NUM_SEQUENCES*CACHE_LENGTH)
     def get_camera_parameters(self, cam_id: str) -> Dict[str, Any]:
         K, w2c = self.get_camera_calibration()[cam_id]
         R = w2c[:3, :3]
@@ -100,7 +101,7 @@ class BecomingLitDataset(Dataset):
             "princpt": princpt,
         }
 
-    @lru_cache(maxsize=1)
+    @lru_cache(maxsize=NUM_SEQUENCES)
     def get_camera_list(self) -> List[str]:
         return self.cameras
 
@@ -153,11 +154,11 @@ class BecomingLitDataset(Dataset):
             return self.filter_frame_list(frame_list)
 
     def load_image(self, frame_id: int, cam_id: str) -> Image.Image:
-        img_path = self.seq_folder / f"img_cc{self.downscale_suffix}" / f"cam_{cam_id}" / f"frame_{frame_id:06d}.avif"
+        img_path = self.seq_folder / f"img_cc{self.downscale_suffix}" / f"cam_{cam_id}" / f"frame_{frame_id:06d}.jpg"
         return pil_to_tensor(Image.open(img_path))
 
     def load_alpha(self, frame_id: int, cam_id: str) -> Image.Image:
-        alpha_path = self.seq_folder / "flame_tracking" / "alpha_masks" / f"cam_{cam_id}" / f"frame_{frame_id:06d}.avif"
+        alpha_path = self.seq_folder / "flame_tracking" / "alpha_masks_birefnet" / f"cam_{cam_id}" / f"frame_{frame_id:06d}_union.jpg"
         return pil_to_tensor(Image.open(alpha_path))
 
     @lru_cache(maxsize=CACHE_LENGTH)
@@ -167,32 +168,32 @@ class BecomingLitDataset(Dataset):
             verts, _ = load_ply(f)
         return verts
 
-    @lru_cache(maxsize=1)
+    @lru_cache(maxsize=NUM_SEQUENCES)
     def load_registration_vertices_mean(self) -> np.ndarray:
         mean_path = self.seq_folder / "flame_tracking" / "vertices" / "vertices_mean.npy"
         return np.load(mean_path)
 
-    @lru_cache(maxsize=1)
+    @lru_cache(maxsize=NUM_SEQUENCES)
     def load_registration_vertices_variance(self) -> float:
         verts_path = self.seq_folder / "flame_tracking" / "vertices" / "vertices_var.txt"
         with open(verts_path, "r") as f:
             return float(f.read())
 
-    @lru_cache(maxsize=1)
+    @lru_cache(maxsize=NUM_SEQUENCES)
     def load_color_mean(self) -> torch.Tensor:
         jpg_path = self.seq_folder / "flame_tracking" / "color_mean.jpg"
         color_mean = Image.open(jpg_path)
         color_mean = color_mean.resize((1024, 1024))
         return pil_to_tensor(color_mean)
 
-    @lru_cache(maxsize=1)
+    @lru_cache(maxsize=NUM_SEQUENCES)
     def load_color_variance(self) -> float:
         # color_var_path = self.seq_folder / "flame_tracking" / "color_variance.txt"
         # with open(color_var_path, "r") as f:
         #     return float(f.read())
         return 458.0  # TODO: Fix this
 
-    @lru_cache(maxsize=1)
+    @lru_cache(maxsize=NUM_SEQUENCES)
     def load_color(self, frame: int) -> Optional[torch.Tensor]:
         jpg_path = self.seq_folder / "flame_tracking" / "color_mean.jpg"
         color = Image.open(jpg_path)
@@ -204,13 +205,13 @@ class BecomingLitDataset(Dataset):
         png_path = self.subject_folder / "BACKGROUND" / f"cam_{camera}_cc.png"
         return pil_to_tensor(Image.open(png_path))
 
-    @lru_cache(maxsize=1)
+    @lru_cache(maxsize=NUM_SEQUENCES)
     def load_light_pattern(self) -> List[Tuple[int]]:
         light_pattern_path = self.seq_folder / "light_pattern_per_frame.json"
         with open(light_pattern_path, "r") as f:
             return json.load(f)
 
-    @lru_cache(maxsize=1)
+    @lru_cache(maxsize=NUM_SEQUENCES)
     def load_light_pattern_meta(self) -> Dict[str, Any]:
         light_pattern_path = self.subject_folder / "calibration" / "light_pattern_metadata.json"
         with open(light_pattern_path, "r") as f:
@@ -240,7 +241,7 @@ class BecomingLitDataset(Dataset):
             **assets,
         }
 
-    @lru_cache(maxsize=1)
+    @lru_cache(maxsize=NUM_SEQUENCES)
     def load_shared_assets(self) -> Dict[str, Any]:
         topology = torch.load(self.root_path / "topology.pt")
         return {"topology": topology}
@@ -383,6 +384,52 @@ def collate_fn(items):
     return default_collate(items) if len(items) > 0 else None
 
 
+class MultiSequenceBecomingLitDataset(Dataset):
+    def __init__(
+        self,
+        root_path: Path,
+        subject: str,
+        sequences: Iterable[str],
+        **dataset_args,
+    ):
+        self.datasets = [
+            BecomingLitDataset(root_path=root_path, subject=subject, sequence=seq, **dataset_args) for seq in sequences
+        ]
+        self.index_ranges = np.cumsum(np.array([len(dataset) for dataset in self.datasets]))
+
+    @property
+    def static_assets(self) -> Dict[str, Any]:
+        seq_shared_assets = self.datasets[0]._static_get_fn()
+        assets = [dataset._static_get_fn() for dataset in self.datasets]
+
+        seq_assets = {
+            "light_pattern": [lp for a in assets for lp in a["light_pattern"]],
+            "camera_ids": seq_shared_assets["camera_ids"],
+            "verts_mean": np.stack([a["verts_mean"] for a in assets], axis=0).mean(axis=0),
+            "verts_var": np.max(np.stack([a["verts_var"] for a in assets], axis=0)).item(),
+            "color_mean": torch.stack([a["color_mean"].float() for a in assets], dim=0).mean(dim=0).byte(),
+            "color_var": np.max(np.array([a["color_var"] for a in assets])).item(),
+            "light_pattern_meta": seq_shared_assets["light_pattern_meta"],
+        }
+
+        shared_assets = self.datasets[0].load_shared_assets()
+        return {
+            **shared_assets,
+            **seq_assets,
+        }
+
+    def batch_filter(self, batch):
+        return self.datasets[0].batch_filter(batch)
+
+    def __len__(self):
+        return sum([len(dataset) for dataset in self.datasets])
+
+    def __getitem__(self, index):
+        dataset_idx = np.searchsorted(self.index_ranges, index, side="right")
+        index_within_dataset = index - self.index_ranges[dataset_idx - 1] if dataset_idx > 0 else index
+        return self.datasets[dataset_idx].__getitem__(index_within_dataset)
+
+
 if __name__ == "__main__":
     import os
 
@@ -399,9 +446,27 @@ if __name__ == "__main__":
         fully_lit_only=False,
     )
 
-    sample = dataset[0]
+    sample = dataset.static_assets
     for k, v in sample.items():
         if isinstance(v, torch.Tensor):
             print(k, v.shape)
+        elif isinstance(v, np.ndarray):
+            print(k, v.shape)
         else:
-            print(k, v)
+            print(k, type(v))
+
+    print("#####")
+    multi_dataset = MultiSequenceBecomingLitDataset(
+        root_path=Path(dataset_path), subject="1001", sequences=["EXP-1", "EXP-2", "EMOTIONS"]
+    )
+
+    print(len(multi_dataset))
+    static_assets = multi_dataset[50000]
+
+    for k, v in static_assets.items():
+        if isinstance(v, torch.Tensor):
+            print(k, v.shape)
+        elif isinstance(v, np.ndarray):
+            print(k, v.shape)
+        else:
+            print(k, type(v))
