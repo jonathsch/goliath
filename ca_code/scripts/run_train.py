@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 
 import wandb
 # from ca_code.utils.dataloader import BodyDataset, collate_fn
-from ca_code.utils.becominglit_dataloader import BecomingLitDataset, collate_fn
+from ca_code.utils.becominglit_dataloader import BecomingLitDataset, MultiSequenceBecomingLitDataset, collate_fn
 from ca_code.utils.module_loader import build_optimizer
 from ca_code.utils.train import load_checkpoint, load_from_config, train
 
@@ -26,7 +26,8 @@ def main(config: DictConfig):
     device = th.device("cuda:0")
 
     # train_dataset = BodyDataset(**config.data)
-    train_dataset = BecomingLitDataset(**config.data)
+    # train_dataset = BecomingLitDataset(**config.data)
+    train_dataset = MultiSequenceBecomingLitDataset(**config.data)
     batch_filter_fn = train_dataset.batch_filter
 
     static_assets = AttrDict(train_dataset.static_assets)
@@ -54,7 +55,6 @@ def main(config: DictConfig):
         **config.dataloader,
     )
 
-    # train_writer = SummaryWriter(log_dir=config.train.tb_dir)
     wandb_run = wandb.init(
         project="RGCA",
         dir=config.train.run_dir,
@@ -62,7 +62,7 @@ def main(config: DictConfig):
         group=config.train.tag,
         tags=[str(config.sid), config.model_name],
         config=OmegaConf.to_container(config),
-    )
+    ) if config.train.run_id != "debug" else None
 
     summary_fn = load_from_config(config.summary)
 
