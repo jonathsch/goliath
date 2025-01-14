@@ -13,6 +13,8 @@ from addict import Dict as AttrDict
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 
+sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
+
 import wandb
 # from ca_code.utils.dataloader import BodyDataset, collate_fn
 from ca_code.utils.becominglit_dataloader import BecomingLitDataset, MultiSequenceBecomingLitDataset, collate_fn

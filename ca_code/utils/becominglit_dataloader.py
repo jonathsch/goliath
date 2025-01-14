@@ -180,6 +180,23 @@ class BecomingLitDataset(Dataset):
             return float(f.read())
 
     @lru_cache(maxsize=NUM_SEQUENCES)
+    def load_flame_params(self, frame) -> Dict[str, torch.Tensor]:
+        flame_params_path = self.seq_folder / "flame_tracking" / "flame_params.npz"
+        flame_params = np.load(flame_params_path)
+
+        return {
+            k: torch.as_tensor(v[frame]).float() for k, v in flame_params.items() if k in ("expr", "jaw_pose", "neck_pose", "eyes_pose")
+        }
+
+    @lru_cache(maxsize=NUM_SEQUENCES)
+    def load_flame_expr_mean(self) -> float:
+        pass
+
+    @lru_cache(maxsize=NUM_SEQUENCES)
+    def load_flame_expr_variance(self) -> float:
+        pass
+
+    @lru_cache(maxsize=NUM_SEQUENCES)
     def load_color_mean(self) -> torch.Tensor:
         jpg_path = self.seq_folder / "flame_tracking" / "color_mean.jpg"
         color_mean = Image.open(jpg_path)
@@ -279,6 +296,7 @@ class BecomingLitDataset(Dataset):
         # reg_verts_mean = self.load_registration_vertices_mean()
         # reg_verts_var = self.load_registration_vertices_variance()
         # template_mesh = self.load_template_mesh()
+        flame_params = self.load_flame_params(frame)
 
         # TODO: precompute some of them
         light_pattern = self.load_light_pattern()
@@ -323,6 +341,7 @@ class BecomingLitDataset(Dataset):
             "n_lights": n_lights,
             "color": color,
             "background": background,
+            "flame_params": flame_params,
             # "keypoints_3d": kpts,
             # "registration_vertices_mean": reg_verts_mean,
             # "registration_vertices_variance": reg_verts_var,

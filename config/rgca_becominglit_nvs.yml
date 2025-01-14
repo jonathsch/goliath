@@ -1,9 +1,9 @@
 sid: "1001"
 sequence: "ALL"
-root_dir: /cluster/valinor/jschmidt/becominglit
+root_dir: /mnt/cluster/valinor/jschmidt
 
 data:
-  root_path: ${root_dir}
+  root_path: ${root_dir}/becominglit
   subject: ${sid}
   sequences: ["EXP-1", "EXP-2", "SEN-01", "SEN-02", "SEN-03"]
   fully_lit_only: False
@@ -110,7 +110,7 @@ optimizer:
 train:
   run_id: "debug" # NOTE: Override this from the cmd line with a unique id
   tag: ${model_name}.${sid}
-  run_dir: /cluster/valinor/jschmidt/logs/goliath/${.tag}/${.run_id}
+  run_dir: ${root_dir}/logs/goliath/${.tag}/${.run_id}
   tb_dir: ${.run_dir}/tb
   ckpt_dir: ${.run_dir}/checkpoints
 

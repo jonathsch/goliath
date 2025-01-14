@@ -17,6 +17,7 @@ import ca_code.nn.layers as la
 from ca_code.nn.color_cal import CalV5
 from ca_code.nn.dof_cal import LearnableBlur
 from ca_code.nn.layers import make_conv_trans, make_linear
+from ca_code.nn.embedding import get_embedder
 from ca_code.utils import sh
 from ca_code.utils.envmap import compose_envmap, dir2uv
 from ca_code.utils.geom import GeometryModule, depth2normals
@@ -63,7 +64,8 @@ class AutoEncoder(nn.Module):
 
         self.encoder = Encoder(
             n_embs=n_embs,
-            n_verts_in=assets.topology.v.shape[0],
+            flame_expr_dim=100,
+            # n_verts_in=assets.topology.v.shape[0],
             **encoder,
         )
 
@@ -136,7 +138,8 @@ class AutoEncoder(nn.Module):
         self,
         head_pose: th.Tensor,
         campos: th.Tensor,
-        registration_vertices: th.Tensor,
+        # registration_vertices: th.Tensor,
+        flame_params: Dict[str, th.Tensor],
         color: th.Tensor,
         light_intensity: th.Tensor,
         light_pos: th.Tensor,
@@ -158,7 +161,7 @@ class AutoEncoder(nn.Module):
             head_pose_4x4 = th.cat([head_pose, th.zeros_like(head_pose[:, :1, :])], dim=1)
             head_pose_4x4[:, 3, 3] = 1.0
             head_pose = head_pose_4x4
-        
+
         # convert everything into head relative coordinates
         headrel_Rt = Rt @ head_pose
         headrel_campos = ((campos - head_pose[:, :3, 3])[:, None] @ head_pose[:, :3, :3])[:, 0]
@@ -168,8 +171,12 @@ class AutoEncoder(nn.Module):
         headrel_light_sh = (sh_coeffs[:, :, None] * light_intensity[..., None]).sum(dim=1)
         if lightrot is not None:
             lightrot = lightrot @ head_pose[:, :3, :3]
+
         # encoding
-        enc_preds = self.encoder(registration_vertices, color)
+        # enc_preds = self.encoder(registration_vertices, color)
+        enc_preds = self.encoder(
+            flame_params["expr"], flame_params["jaw_pose"], flame_params["neck_pose"], flame_params["eyes_pose"], color
+        )
         embs = enc_preds["embs"]
 
         # decoding
@@ -236,7 +243,7 @@ class Encoder(nn.Module):
     def __init__(
         self,
         n_embs: int,
-        n_verts_in: int,
+        flame_expr_dim: int,
         noise_std: float = 1.0,
         mean_scale: float = 0.1,
         logvar_scale: float = 0.01,
@@ -249,9 +256,17 @@ class Encoder(nn.Module):
         self.mean_scale = mean_scale
         self.logvar_scale = logvar_scale
 
-        self.n_verts_in = n_verts_in
+        self.jaw_embedder, jaw_enc_dim = get_embedder(5)
+        self.neck_embedder, neck_emb_dim = get_embedder(5)
+        self.eyes_embedder, eyes_enc_dim = get_embedder(5)
 
-        self.geommod = th.nn.Sequential(la.LinearWN(self.n_verts_in * 3, 256), th.nn.LeakyReLU(0.2, inplace=True))
+        self.flame_expr = flame_expr_dim
+        self.flame_param_dim = flame_expr_dim + jaw_enc_dim + neck_emb_dim + eyes_enc_dim * 2
+
+        logger.info(f"flame_param_dim: {self.flame_param_dim}")
+
+        # self.geommod = th.nn.Sequential(la.LinearWN(self.n_verts_in * 3, 256), th.nn.LeakyReLU(0.2, inplace=True))
+        self.flamemod = th.nn.Sequential(la.LinearWN(self.flame_param_dim, 256), th.nn.LeakyReLU(0.2, inplace=True))
 
         self.texmod = th.nn.Sequential(
             la.Conv2dWNUB(3, 32, 512, 512, 4, 2, 1),
@@ -280,10 +295,25 @@ class Encoder(nn.Module):
         la.glorot(self.mean, 1.0)
         la.glorot(self.logvar, 1.0)
 
-    def forward(self, geom: th.Tensor, color: th.Tensor) -> Dict[str, th.Tensor]:
+    def forward(
+        self,
+        flame_expr: th.Tensor,
+        flame_jaw: th.Tensor,
+        flame_neck: th.Tensor,
+        flame_eyes: th.Tensor,
+        color: th.Tensor,
+    ) -> Dict[str, th.Tensor]:
         preds = {}
 
-        geomout = self.geommod(geom.view(geom.shape[0], -1))
+        # Encode jaw, neck and eye pose
+        jaw_enc = self.jaw_embedder(flame_jaw)
+        neck_enc = self.neck_embedder(flame_neck)
+        eyes_enc = self.eyes_embedder(flame_eyes)
+        geom = th.cat([flame_expr, jaw_enc, neck_enc, eyes_enc], dim=1)  # [B, flame_param_dim]
+
+        # geomout = self.geommod(geom.view(geom.shape[0], -1))
+        geomout = self.flamemod(geom)
+
         texout = self.texmod(color / 255.0 - 0.5).view(-1, 256 * 4 * 4)
         encout = self.jointmod(th.cat([geomout, texout], dim=1))
         embs_mu = self.mean(encout) * self.mean_scale
@@ -334,7 +364,9 @@ class GeomDecoder(nn.Module):
     def forward(self, embs: th.Tensor) -> Dict[str, th.Tensor]:
         preds = {}
 
-        geom = self.geommod(embs).view(embs.shape[0], -1, 3) * 1e-3 # NOTE: We scale this since our geometry is in meters (not mm)
+        geom = (
+            self.geommod(embs).view(embs.shape[0], -1, 3) * 1e-3
+        )  # NOTE: We scale this since our geometry is in meters (not mm)
         geom = geom * self.verts_std + self.verts_mean
 
         preds.update(face_geom=geom)
@@ -455,7 +487,7 @@ class PrimDecoder(nn.Module):
         # Gaussian parameters
         f_geom = f_vnocond[:, self.n_diff_coeffs : self.n_diff_coeffs + 11]
         f_geom = f_geom.permute(0, 2, 3, 1).view(B, -1, 11)
-        primpos = f_geom[..., 0:3] * 0.001 + primposbase # NOTE: We scale this since our geometry is in meters (not mm)
+        primpos = f_geom[..., 0:3] * 0.001 + primposbase  # NOTE: We scale this since our geometry is in meters (not mm)
         primqvec = F.normalize(f_geom[..., 3:7], dim=-1)
         primscale = F.softplus(f_geom[..., 7:10])
         opacity = th.sigmoid(f_geom[..., 10:11])
