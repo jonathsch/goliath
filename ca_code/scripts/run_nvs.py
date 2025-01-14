@@ -42,22 +42,16 @@ def main(config: DictConfig):
         config.train.run_dir = "/mnt" + config.train.run_dir
 
     model_dir = config.train.run_dir
-    os.makedirs(f"{model_dir}/tmp", exist_ok=True)
-    os.makedirs(f"{model_dir}/nvs", exist_ok=True)
+    os.makedirs(f"{model_dir}/nvs/tmp", exist_ok=True)
 
     ckpt_path = f"{model_dir}/checkpoints/600000.pt"
     if not os.path.exists(ckpt_path):
         ckpt_path = f"{model_dir}/checkpoints/latest.pt"
 
-    # Setup dataset for target sequence
     config.data.root_path = os.getenv("BECOMINGLIT_DATASET_PATH")
-    config.data.fully_lit_only = False
-    config.data.partially_lit_only = False
-    config.data.sequence = config.self_reenact.tgt_seq
-
+    config.data.sequence = "EXP-2"
+    del config.data.sequences
     dataset = BecomingLitDataset(**config.data)
-    # batch_filter_fn = dataset.batch_filter
-
     static_assets = AttrDict(dataset.static_assets)
 
     # building the model
@@ -82,6 +76,7 @@ def main(config: DictConfig):
     model.cal_enabled = False
 
     config.test.data.root_path = os.getenv("BECOMINGLIT_DATASET_PATH")
+    config.test.data.sequence = "EXP-2"
     dataset = BecomingLitDataset(**config.test.data)
     batch_filter_fn = dataset.batch_filter
 
@@ -115,42 +110,44 @@ def main(config: DictConfig):
         ssim.update(pred_rgb, gt_rgb)
         lpips.update(pred_rgb, gt_rgb)
 
-        if i % 10 == 0:
-            rgb_preds_grid = make_grid(th.cat([gt_rgb, pred_rgb]), nrow=4)
-            save_image(rgb_preds_grid, f"{model_dir}/nvs/{i:05d}.png")
+        rgb_preds_grid = make_grid(th.cat([gt_rgb, pred_rgb]), nrow=4)
+        save_image(rgb_preds_grid, f"{model_dir}/nvs/tmp/{i}.jpg")
 
-    logger.info(f"PSNR: {psnr.compute().item()}, SSIM: {ssim.compute().item()}, LPIPS: {lpips.compute().item()}")
-    with open(f"{model_dir}/metrics_self_reenact_{config.self_reenact.tgt_seq}.json", "w") as f:
-        json.dump({"psnr": psnr.compute().item(), "ssim": ssim.compute().item(), "lpips": lpips.compute().item()}, f)
-
-    # os.system(
-    #     f"ffmpeg -y -framerate 24 -i '{model_dir}/tmp/%d.png' -b:v 8000000 -c:v mpeg4 -g 10 -pix_fmt yuv420p {model_dir}/_self_reenact_{config.self_reenact.tgt_seq}.mp4 -y"
-    # )
-
-    model_e = EnvSpinDecorator(
-        model,
-        envmap_path="./envmaps/metro_noord_1k.hdr",
-        ydown=True,
-        env_scale=8.0,
-    ).to(device)
-
-    # forward
-    for i, batch in enumerate(tqdm(loader)):
-        batch = to_device(batch, device)
-        batch_filter_fn(batch)
-        with th.no_grad():
-            preds = model_e(**batch, index=[i])
-
-        # visualizing
-        rgb_preds_grid = make_grid(linear2srgb(preds["rgb"]), nrow=4)
-        save_image(rgb_preds_grid, f"{model_dir}/tmp/{i}.png")
-
-        if i > 256:
+        if i > 720:
             break
 
+    logger.info(f"PSNR: {psnr.compute().item()}, SSIM: {ssim.compute().item()}, LPIPS: {lpips.compute().item()}")
+    with open(f"{model_dir}/nvs/metrics.json", "w") as f:
+        json.dump({"psnr": psnr.compute().item(), "ssim": ssim.compute().item(), "lpips": lpips.compute().item()}, f)
+
     os.system(
-        f"ffmpeg -y -framerate 72 -i '{model_dir}/tmp/%d.png' -b:v 8000000 -c:v mpeg4 -pix_fmt yuv420p {model_dir}/_nvs_env.mp4 -y"
+        f"ffmpeg -y -framerate 72 -i '{model_dir}/nvs/tmp/%d.jpg' -b:v 8000000 -c:v mpeg4 -g 10 -pix_fmt yuv420p {model_dir}/nvs/_nvs.mp4 -y > /dev/null"
     )
+
+    # model_e = EnvSpinDecorator(
+    #     model,
+    #     envmap_path="./envmaps/metro_noord_1k.hdr",
+    #     ydown=True,
+    #     env_scale=8.0,
+    # ).to(device)
+
+    # # forward
+    # for i, batch in enumerate(tqdm(loader)):
+    #     batch = to_device(batch, device)
+    #     batch_filter_fn(batch)
+    #     with th.no_grad():
+    #         preds = model_e(**batch, index=[i])
+
+    #     # visualizing
+    #     rgb_preds_grid = make_grid(linear2srgb(preds["rgb"]), nrow=4)
+    #     save_image(rgb_preds_grid, f"{model_dir}/tmp/{i}.png")
+
+    #     if i > 256:
+    #         break
+
+    # os.system(
+    #     f"ffmpeg -y -framerate 72 -i '{model_dir}/nvs/tmp/env%d.png' -b:v 8000000 -c:v mpeg4 -pix_fmt yuv420p {model_dir}/_nvs_env.mp4 -y"
+    # )
 
 
 if __name__ == "__main__":
