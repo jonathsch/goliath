@@ -154,6 +154,11 @@ class AutoEncoder(nn.Module):
     ) -> Dict[str, Any]:
         light_intensity = light_intensity.expand(-1, -1, 3)
 
+        if head_pose.shape[-2:] == (3, 4):
+            head_pose_4x4 = th.cat([head_pose, th.zeros_like(head_pose[:, :1, :])], dim=1)
+            head_pose_4x4[:, 3, 3] = 1.0
+            head_pose = head_pose_4x4
+        
         # convert everything into head relative coordinates
         headrel_Rt = Rt @ head_pose
         headrel_campos = ((campos - head_pose[:, :3, 3])[:, None] @ head_pose[:, :3, :3])[:, 0]
