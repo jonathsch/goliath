@@ -3,8 +3,8 @@
 ###-----------------------------------------------------------------
 ### Configuration variables
 
-CONFIG_FILE=config/rgca_example.yml
-TIME='3-00:00:00'
+CONFIG_FILE=/cluster/pegasus/jschmidt/logs/goliath/RGCA/runs/rgca.AXE977/2024-11-27_13-28-18_5cm_perturbed_lpos/config.yml
+TIME='1-00:00:00'
 
 
 ###-----------------------------------------------------------------
@@ -25,9 +25,9 @@ for (( i=0; i<"${#SIDS[@]}"; i++ )); do
 SID="${SIDS[i]}"
 DATA_ROOT="${DATA_ROOTS[i]}"
 
-JOB_NAME=RGCA_${SID}
-RUN_ID=$(date '+%Y-%m-%d_%H-%M-%S')
-# CKPT_DIR=/cluster/pegasus/jschmidt/logs/goliath/RGCA/${SID}_${RUN_ID}/
+JOB_NAME=test_RGCA_${SID}
+LOG_DIR=/cluster/pegasus/jschmidt/logs/goliath/RGCA/
+CKPT_DIR=/cluster/pegasus/jschmidt/logs/goliath/RGCA/${SID}_${RUN_ID}/
 
 ###-----------------------------------------------------------------
 # Create a temporary script file
@@ -37,26 +37,35 @@ SCRIPT=$(mktemp)
 cat > $SCRIPT <<EOL
 #!/bin/bash
 #SBATCH --partition=submit
-#SBATCH --job-name=train_goliath
+#SBATCH --job-name=${JOB_NAME}
 #SBATCH --nodes=1
 #SBATCH --time=${TIME}
 #SBATCH --ntasks=1
-#SBATCH --mem=128G
+#SBATCH --mem=64G
 #SBATCH --cpus-per-task=8
 #SBATCH --gpus-per-task=a100:1
-#SBATCH --output=./slurm_out_%x_%j.txt
+#SBATCH --output=%x_%j_%N.log
 
 source /rhome/jschmidt/.bashrc
 source activate rgca
 cd ${ROOT_DIR}
 
+mkdir -p ${CKPT_DIR}
+
 nvidia-smi
 
 # Run training
-srun python -m ca_code.scripts.run_train \
+srun python -m ca_code.scripts.run_test \
     ${CONFIG_FILE} \
-    train.run_id=${RUN_ID} \
+    sid=${SID} \
     data.root_path=${DATA_ROOT} \
+    test.test_path=${CKPT_DIR}
+
+srun python -m ca_code.scripts.run_vis_relight \
+    ${CONFIG_FILE} \
+    sid=${SID} \
+    data.root_path=${DATA_ROOT} \
+    test_path=${CKPT_DIR}"
 EOL
 
 ###-----------------------------------------------------------------

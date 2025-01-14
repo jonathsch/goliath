@@ -3,7 +3,7 @@
 ###-----------------------------------------------------------------
 ### Configuration variables
 
-CONFIG_FILE=config/rgca_example.yml
+CONFIG_FILE=config/rgca_becominglit_nvs.yml
 TIME='3-00:00:00'
 
 
@@ -12,10 +12,10 @@ TIME='3-00:00:00'
 ROOT_DIR=/rhome/jschmidt/projects/goliath
 
 declare -a SIDS=(
-    "AXE977"
+    "'1001'"
 )
 declare -a DATA_ROOTS=(
-    "/cluster/pegasus/jschmidt/goliath/m--20230306--0707--AXE977--pilot--ProjectGoliath--Head"
+    "/cluster/valinor/jschmidt/becominglit"
 )
 
 ###-----------------------------------------------------------------
@@ -23,10 +23,11 @@ declare -a DATA_ROOTS=(
 for (( i=0; i<"${#SIDS[@]}"; i++ )); do
 
 SID="${SIDS[i]}"
+SEQUENCE="EXP-2"
 DATA_ROOT="${DATA_ROOTS[i]}"
 
-JOB_NAME=RGCA_${SID}
-RUN_ID=$(date '+%Y-%m-%d_%H-%M-%S')
+JOB_NAME=RGCA_BL_${SID}
+RUN_ID=ALL_NVS_$(date '+%Y-%m-%d_%H-%M-%S')
 # CKPT_DIR=/cluster/pegasus/jschmidt/logs/goliath/RGCA/${SID}_${RUN_ID}/
 
 ###-----------------------------------------------------------------
@@ -37,14 +38,14 @@ SCRIPT=$(mktemp)
 cat > $SCRIPT <<EOL
 #!/bin/bash
 #SBATCH --partition=submit
-#SBATCH --job-name=train_goliath
+#SBATCH --job-name=train_rgca_nvs
 #SBATCH --nodes=1
 #SBATCH --time=${TIME}
 #SBATCH --ntasks=1
 #SBATCH --mem=128G
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=16
 #SBATCH --gpus-per-task=a100:1
-#SBATCH --output=./slurm_out_%x_%j.txt
+#SBATCH --output=./slurm_logs/slurm_out_%x_%j.txt
 
 source /rhome/jschmidt/.bashrc
 source activate rgca
@@ -57,6 +58,7 @@ srun python -m ca_code.scripts.run_train \
     ${CONFIG_FILE} \
     train.run_id=${RUN_ID} \
     data.root_path=${DATA_ROOT} \
+    sid=${SID}
 EOL
 
 ###-----------------------------------------------------------------
