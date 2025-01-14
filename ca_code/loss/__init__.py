@@ -408,6 +408,9 @@ def rgb_l1(
             mask = mask * (1 - preds[ddisc_key])
         except Exception:
             mask = mask * ~preds[ddisc_key]
+    
+    # mask_np = mask.detach().permute(0, 2, 3, 1).cpu().numpy()[0]
+    
     return ((preds[src_key] - targets[tgt_key]) * mask).abs().mean()
 
 
