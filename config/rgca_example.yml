@@ -1,5 +1,5 @@
 sid: AXE977
-root_dir: /mnt/cluster/pegasus/jschmidt/goliath
+root_dir: /cluster/pegasus/jschmidt/goliath
 
 data:
   root_path: ${root_dir}/m--20230306--0707--AXE977--pilot--ProjectGoliath--Head/
