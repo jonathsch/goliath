@@ -1,28 +1,12 @@
-sid: "1001"
+sid: "1015"
 sequence: "ALL"
 root_dir: /cluster/valinor/jschmidt/becominglit
 
 data:
   root_path: ${root_dir}
   subject: ${sid}
-  sequences: ["EXP-1", "EXP-2", "SEN-01", "SEN-02", "SEN-03"]
+  sequences: ["HEADROT"]
   fully_lit_only: False
-  cameras_subset: 
-    - "222200042"
-    - "222200044"
-    - "222200046"
-    - "222200040"
-    - "222200036"
-    - "222200048"
-    - "220700191"
-    - "222200041"
-    - "222200038"
-    - "222200047"
-    - "222200043"
-    - "222200049"
-    - "222200039"
-    - "222200045"
-    - "221501007"
 
 dataloader:
   batch_size: 8
@@ -32,10 +16,10 @@ dataloader:
   persistent_workers: True
   shuffle: True
 
-model_name: rgca
+model_name: rgca_fix_geom
 
 model:
-  class_name: ca_code.models.${model_name}.AutoEncoder
+  class_name: ca_code.models.rgca.AutoEncoder
 
   n_embs: 256
   image_height: 1604
@@ -55,8 +39,7 @@ model:
   learn_blur: true
 
 summary:
-  class_name: ca_code.models.${model_name}.RGCASummary
-
+  class_name: ca_code.models.rgca.RGCASummary
 
 loss:
   class_name: ca_code.loss.ModularLoss
@@ -71,7 +54,7 @@ loss:
       tgt_key: image
       mask_key: image_weight
       weight: 2e-1
-    geom_l2: 0.4 # in paper, it was 10 because it's normalized by variance
+    # geom_l2: 0.4 # in paper, it was 10 because it's normalized by variance
     l2_reg:
       key: spec_dnml
       schedule:
