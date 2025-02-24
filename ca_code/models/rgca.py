@@ -334,7 +334,7 @@ class GeomDecoder(nn.Module):
     def forward(self, embs: th.Tensor) -> Dict[str, th.Tensor]:
         preds = {}
 
-        geom = self.geommod(embs).view(embs.shape[0], -1, 3) * 1e-3 # NOTE: We scale this since our geometry is in meters (not mm)
+        geom = self.geommod(embs).view(embs.shape[0], -1, 3)
         geom = geom * self.verts_std + self.verts_mean
 
         preds.update(face_geom=geom)
@@ -455,7 +455,7 @@ class PrimDecoder(nn.Module):
         # Gaussian parameters
         f_geom = f_vnocond[:, self.n_diff_coeffs : self.n_diff_coeffs + 11]
         f_geom = f_geom.permute(0, 2, 3, 1).view(B, -1, 11)
-        primpos = f_geom[..., 0:3] * 0.001 + primposbase # NOTE: We scale this since our geometry is in meters (not mm)
+        primpos = f_geom[..., 0:3] + primposbase
         primqvec = F.normalize(f_geom[..., 3:7], dim=-1)
         primscale = F.softplus(f_geom[..., 7:10])
         opacity = th.sigmoid(f_geom[..., 10:11])
@@ -507,6 +507,7 @@ class PrimDecoder(nn.Module):
         color = diff_color.clamp(min=0.0) + spec_color
 
         preds.update(
+            albedo=albedo.clamp(min=0.0),
             color=color.clamp(min=0.0),
             opacity=opacity,
             primpos=primpos,
