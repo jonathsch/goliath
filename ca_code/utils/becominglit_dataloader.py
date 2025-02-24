@@ -79,6 +79,10 @@ class BecomingLitDataset(Dataset):
 
         # NOTE: Camera extrinsics are in OpenCV convention, which fits the gsplat backend. No need for conversion.
 
+        # Scale translation from meters to millimeters
+        for cid, mtx in w2c.items():
+            mtx[:3, 3] *= 1000
+
         if self.cameras_subset:
             w2c = {cid: w2c for cid, w2c in w2c.items() if cid in self.cameras_subset}
             logger.info(f"Left with {len(w2c)} cameras after filtering for passed camera subset")
@@ -441,8 +445,8 @@ if __name__ == "__main__":
     print(f"Dataset path: {dataset_path}")
     dataset = BecomingLitDataset(
         root_path=Path(dataset_path),
-        subject="1001",
-        sequence="EXP-1",
+        subject="1015",
+        sequence="HEADROT",
         fully_lit_only=False,
     )
 
@@ -453,7 +457,7 @@ if __name__ == "__main__":
         elif isinstance(v, np.ndarray):
             print(k, v.shape)
         else:
-            print(k, type(v))
+            print(k, v)
 
     print("#####")
     multi_dataset = MultiSequenceBecomingLitDataset(
