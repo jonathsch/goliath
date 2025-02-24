@@ -93,7 +93,7 @@ def unzip_kinematic_tracking(input_root_path: Path, output_root_path: Path):
 
     for f in files:
         print(f"Copying file {input_path / f} to {output_path / f}")
-        shutil.copy(input_path / f, output_path / f)
+        # shutil.copy(input_path / f, output_path / f)
     for f in zips:
         print(f"Unzipping {input_path / f} into {output_path}")
         unzip_zip(input_path / f, output_path)
@@ -145,10 +145,10 @@ def unzip_uv_image(input_root_path: Path, output_root_path: Path):
 
     for f in files:
         print(f"Copying file {input_path / f} to {output_path / f}")
-        shutil.copy(input_path / f, output_path / f)
+        # shutil.copy(input_path / f, output_path / f)
     for f in zips:
         print(f"Unzipping {input_path / f} into {output_path}")
-        unzip_zip(input_path / f, output_path)
+        # unzip_zip(input_path / f, output_path)
 
 
 def unzip_scan_mesh(input_root_path: Path, output_root_path: Path):
@@ -185,7 +185,7 @@ def main():
     output_root_path = Path(args.output)
     output_root_path.mkdir(exist_ok=True)
 
-    copy_misc(input_root_path, output_root_path)
+    # copy_misc(input_root_path, output_root_path)
     unzip_scan_mesh(input_root_path, output_root_path)
     unzip_uv_image(input_root_path, output_root_path)
     unzip_segmentation_parts(input_root_path, output_root_path)

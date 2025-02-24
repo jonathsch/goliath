@@ -247,6 +247,7 @@ class Encoder(nn.Module):
         noise_std: float = 1.0,
         mean_scale: float = 0.1,
         logvar_scale: float = 0.01,
+        use_tex_image: bool = True,
     ):
         """Fixed-width conv encoder."""
         super().__init__()
@@ -266,27 +267,31 @@ class Encoder(nn.Module):
         logger.info(f"flame_param_dim: {self.flame_param_dim}")
 
         # self.geommod = th.nn.Sequential(la.LinearWN(self.n_verts_in * 3, 256), th.nn.LeakyReLU(0.2, inplace=True))
-        self.flamemod = th.nn.Sequential(la.LinearWN(self.flame_param_dim, 256), th.nn.LeakyReLU(0.2, inplace=True))
 
-        self.texmod = th.nn.Sequential(
-            la.Conv2dWNUB(3, 32, 512, 512, 4, 2, 1),
-            th.nn.LeakyReLU(0.2, inplace=True),
-            la.Conv2dWNUB(32, 32, 256, 256, 4, 2, 1),
-            th.nn.LeakyReLU(0.2, inplace=True),
-            la.Conv2dWNUB(32, 64, 128, 128, 4, 2, 1),
-            th.nn.LeakyReLU(0.2, inplace=True),
-            la.Conv2dWNUB(64, 64, 64, 64, 4, 2, 1),
-            th.nn.LeakyReLU(0.2, inplace=True),
-            la.Conv2dWNUB(64, 128, 32, 32, 4, 2, 1),
-            th.nn.LeakyReLU(0.2, inplace=True),
-            la.Conv2dWNUB(128, 128, 16, 16, 4, 2, 1),
-            th.nn.LeakyReLU(0.2, inplace=True),
-            la.Conv2dWNUB(128, 256, 8, 8, 4, 2, 1),
-            th.nn.LeakyReLU(0.2, inplace=True),
-            la.Conv2dWNUB(256, 256, 4, 4, 4, 2, 1),
-            th.nn.LeakyReLU(0.2, inplace=True),
-        )
-        self.jointmod = th.nn.Sequential(la.LinearWN(256 + 256 * 4 * 4, 512), th.nn.LeakyReLU(0.2, inplace=True))
+        if use_tex_image:
+            self.flamemod = th.nn.Sequential(la.LinearWN(self.flame_param_dim, 256), th.nn.LeakyReLU(0.2, inplace=True))
+            self.texmod = th.nn.Sequential(
+                la.Conv2dWNUB(3, 32, 512, 512, 4, 2, 1),
+                th.nn.LeakyReLU(0.2, inplace=True),
+                la.Conv2dWNUB(32, 32, 256, 256, 4, 2, 1),
+                th.nn.LeakyReLU(0.2, inplace=True),
+                la.Conv2dWNUB(32, 64, 128, 128, 4, 2, 1),
+                th.nn.LeakyReLU(0.2, inplace=True),
+                la.Conv2dWNUB(64, 64, 64, 64, 4, 2, 1),
+                th.nn.LeakyReLU(0.2, inplace=True),
+                la.Conv2dWNUB(64, 128, 32, 32, 4, 2, 1),
+                th.nn.LeakyReLU(0.2, inplace=True),
+                la.Conv2dWNUB(128, 128, 16, 16, 4, 2, 1),
+                th.nn.LeakyReLU(0.2, inplace=True),
+                la.Conv2dWNUB(128, 256, 8, 8, 4, 2, 1),
+                th.nn.LeakyReLU(0.2, inplace=True),
+                la.Conv2dWNUB(256, 256, 4, 4, 4, 2, 1),
+                th.nn.LeakyReLU(0.2, inplace=True),
+            )
+            self.jointmod = th.nn.Sequential(la.LinearWN(256 + 256 * 4 * 4, 512), th.nn.LeakyReLU(0.2, inplace=True))
+        else:
+            self.texmod = None
+            self.flamemod = th.nn.Sequential(la.LinearWN(self.flame_param_dim, 512), th.nn.LeakyReLU(0.2, inplace=True))
 
         self.mean: th.nn.Module = la.LinearWN(512, self.n_embs)
         self.logvar: th.nn.Module = la.LinearWN(512, self.n_embs)
@@ -314,8 +319,12 @@ class Encoder(nn.Module):
         # geomout = self.geommod(geom.view(geom.shape[0], -1))
         geomout = self.flamemod(geom)
 
-        texout = self.texmod(color / 255.0 - 0.5).view(-1, 256 * 4 * 4)
-        encout = self.jointmod(th.cat([geomout, texout], dim=1))
+        if self.texmod is not None:
+            texout = self.texmod(color / 255.0 - 0.5).view(-1, 256 * 4 * 4)
+            encout = self.jointmod(th.cat([geomout, texout], dim=1))
+        else:
+            encout = geomout
+
         embs_mu = self.mean(encout) * self.mean_scale
         embs_logvar = self.logvar(encout) * self.logvar_scale
 
