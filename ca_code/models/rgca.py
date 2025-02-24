@@ -173,8 +173,8 @@ class AutoEncoder(nn.Module):
         embs = enc_preds["embs"]
 
         # decoding
-        geom_preds = self.geomdecoder(embs)
-        geom = geom_preds["face_geom"]
+        # geom_preds = self.geomdecoder(embs)
+        geom = registration_vertices
         dec_preds = self.decoder(
             embs,
             geom,
