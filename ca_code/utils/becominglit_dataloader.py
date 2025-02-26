@@ -288,7 +288,7 @@ class BecomingLitDataset(Dataset):
         light_pattern = self.load_light_pattern()
         light_pattern = {f[0]: f[1] for f in light_pattern}
         light_pattern_meta = self.load_light_pattern_meta()
-        light_pos_all = torch.FloatTensor(light_pattern_meta["light_positions"])
+        light_pos_all = torch.FloatTensor(light_pattern_meta["light_positions"]) * 1000 # meters to millimeters
         n_lights_all = light_pos_all.shape[0]
         lightinfo = torch.IntTensor(light_pattern_meta["light_pattern"][light_pattern[frame]]["light_index_durations"])
         n_lights = lightinfo.shape[0]
