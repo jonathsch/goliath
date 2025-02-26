@@ -12,6 +12,7 @@ import torch as th
 from addict import Dict as AttrDict
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
+import dotenv
 
 import wandb
 # from ca_code.utils.dataloader import BodyDataset, collate_fn
@@ -85,7 +86,14 @@ if __name__ == "__main__":
     config_path: str = sys.argv[1]
     console_commands: List[str] = sys.argv[2:]
 
+    dotenv.load_dotenv()
+    cluster_path_prefix = os.getenv("CLUSTER_PATH_PREFIX", "")
+
     config = OmegaConf.load(config_path)
+
+    config.data.root_path = cluster_path_prefix + config.data.root_path
+    config.train.run_dir = cluster_path_prefix + config.train.run_dir
+
     config_cli = OmegaConf.from_cli(args_list=console_commands)
     if config_cli:
         logger.info("Overriding with the following args values:")
