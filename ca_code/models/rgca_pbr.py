@@ -23,7 +23,7 @@ from ca_code.utils.geom import GeometryModule, depth2normals
 from ca_code.utils.image import linear2srgb, make_image_grid_batched, scale_diff_image
 from ca_code.utils.mipmap_sampler import mipmap_grid_sample
 from ca_code.utils.render_gsplat import render as render_gs
-from ca_code.utils.pbr import pbr_python, _bsdf_lambert
+from ca_code.slang.pbr import disney_pbr_slang
 from extensions.sgutils.sgutils import evaluate_gaussian
 
 logger = logging.getLogger(__name__)
@@ -517,7 +517,7 @@ class PrimDecoder(nn.Module):
             ks = th.zeros_like(albedo)
             ks[..., 0] = spec_str
             ks[..., 1] = sigma
-            diff_color, spec_color = pbr_python(albedo, ks, primpos, spec_nml, headrel_campos, headrel_light_pos, light_intensity)
+            diff_color, spec_color = disney_pbr_slang(albedo, ks, primpos, spec_nml, headrel_campos, headrel_light_pos, light_intensity)
 
         color = diff_color.clamp(min=0.0) + spec_color
 
@@ -560,7 +560,7 @@ class PrimDecoder(nn.Module):
                 # light_sh = (sh_coeffs[:, :, None] * light_intensity[..., None]).sum(dim=1)
 
             # diff_color_rand = (diff_shs * light_sh[:, None]).sum(dim=-1)
-            diff_color_rand = _bsdf_lambert(spec_nml, light_dir) * light_intensity
+            diff_color_rand = th.clamp((spec_nml * light_dir).sum(dim=-1, keepdim=True), min=0.0) * light_intensity
 
             preds["cos_weight"] = cos_weight
             preds["color_rand"] = diff_color_rand.clamp(min=0.0)
