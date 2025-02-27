@@ -70,7 +70,9 @@ loss:
         end: 600000
         value: 1.0
     bound_primscale: 1e-2
-    negcolor: 1e-2
+    negcolor:
+      weight: 1e-2
+      key: color
     learn_blur: 0.001
     kl: 0.002
 

@@ -468,7 +468,7 @@ class PrimDecoder(nn.Module):
         # sigma = f_vnocond[:, self.n_diff_coeffs + 11 :]
         sigma = f_vnocond[:, 11:12]
         sigma = sigma.permute(0, 2, 3, 1).view(B, -1)
-        sigma = (th.exp(sigma) * 0.1).clamp(min=0.01)
+        sigma = (th.exp(sigma) * 0.1).clamp(min=0.1)
 
         # view-dependent specular strength
         spec_str = th.sigmoid(f_vcond[..., 3:])
@@ -517,9 +517,9 @@ class PrimDecoder(nn.Module):
             ks = th.zeros_like(albedo)
             ks[..., 0] = spec_str
             ks[..., 1] = sigma
-            diff_color, spec_color = disney_pbr_slang(albedo, ks, primpos, spec_nml, headrel_campos, headrel_light_pos, light_intensity)
+            color = disney_pbr_slang(albedo, ks, primpos, spec_nml, headrel_campos, headrel_light_pos, light_intensity)
 
-        color = diff_color.clamp(min=0.0) + spec_color
+        # color = diff_color.clamp(min=0.0) + spec_color
 
         preds.update(
             albedo=albedo.clamp(min=0.0),
@@ -533,8 +533,9 @@ class PrimDecoder(nn.Module):
             # spec_vis=spec_vis,
             spec_nml=spec_nml,
             spec_dnml=spec_dnml,
-            diff_color=diff_color,
-            spec_color=spec_color,
+            # diff_color=diff_color,
+            # spec_color=spec_color,
+            shaded_col=color,
             primnmlbase=primnmlbase,
         )
 
@@ -572,15 +573,16 @@ class RGCASummary(Callable):
     def __call__(self, preds: Dict[str, Any], batch: Dict[str, Any]) -> Dict[str, th.Tensor]:
         diag = {}
 
-        dev = preds["diff_color"].device
-        bs = preds["diff_color"].shape[0]
-        diff_color = preds["diff_color"].clamp(0, 1)
-        spec_color = preds["spec_color"].clamp(0, 1)
+        dev = preds["rgb"].device
+        bs = preds["rgb"].shape[0]
+        # diff_color = preds["diff_color"].clamp(0, 1)
+        # spec_color = preds["spec_color"].clamp(0, 1)
         opacity = (preds["opacity"]).clamp(0, 1)
         spec_normal = preds["spec_nml"] * 0.5 + 0.5
         spec_rough = preds["sigma"].clamp(0, 1)
         # spec_vis = (preds["spec_vis"]).clamp(0, 1)
-        color = diff_color + spec_color
+        shaded_col = preds["shaded_col"].clamp(0, 1)
+        color = shaded_col
 
         fh, fw = 1024, 1024
         nf = fh * fw
@@ -590,13 +592,16 @@ class RGCASummary(Callable):
         out[:, :, :fh] = color[:, 0:nf].view(bs, fh, fw, -1).permute(0, 3, 1, 2)
         diag["sh_slab"] = linear2srgb(out).clamp(0, 1)
 
-        out = th.zeros(bs, 3, h, fw, device=dev)
-        out[:, :, :fh] = diff_color[:, 0:nf].view(bs, fh, fw, -1).permute(0, 3, 1, 2)
-        diag["diff_sh_slab"] = linear2srgb(out).clamp(0, 1)
+        # out = th.zeros(bs, 3, h, fw, device=dev)
+        # out[:, :, :fh] = diff_color[:, 0:nf].view(bs, fh, fw, -1).permute(0, 3, 1, 2)
+        # diag["diff_sh_slab"] = linear2srgb(out).clamp(0, 1)
 
+        # out = th.zeros(bs, 3, h, fw, device=dev)
+        # out[:, :, :fh] = spec_color[:, 0:nf].view(bs, fh, fw, -1).permute(0, 3, 1, 2)
+        # diag["spec_slab"] = linear2srgb(out).clamp(0, 1)
         out = th.zeros(bs, 3, h, fw, device=dev)
-        out[:, :, :fh] = spec_color[:, 0:nf].view(bs, fh, fw, -1).permute(0, 3, 1, 2)
-        diag["spec_slab"] = linear2srgb(out).clamp(0, 1)
+        out[:, :, :fh] = color[:, 0:nf].view(bs, fh, fw, -1).permute(0, 3, 1, 2)
+        diag["color_slab"] = out.clamp(0, 1)
 
         out = th.zeros(bs, 3, h, fw, device=dev)
         out[:, :, :fh] = spec_normal[:, 0:nf].view(bs, fh, fw, -1).permute(0, 3, 1, 2)
