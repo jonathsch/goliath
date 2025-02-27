@@ -372,9 +372,9 @@ class PrimDecoder(nn.Module):
         self.n_diff_coeffs = 3 * self.n_color_sh_coeffs + self.n_mono_sh_coeffs
 
         # vind_ch = self.n_diff_coeffs + 11 + 1  # diffuse_sh + Gaussian params + roughness
-        vind_ch = 11 + 1 # Gaussian params + roughness
+        vind_ch = 11 + 1 + 3 + 1 # Gaussian params + roughness + normal + spec_str
         # vd_ch = 4  # normal + visibility
-        vd_ch = 4 # normal + spec_str
+        # vd_ch = 4 # normal + spec_str
         self.vnocond_mod = nn.Sequential(
             *make_conv_trans(256, 256, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(16, 16)),
             *make_conv_trans(256, 128, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(32, 32)),
@@ -384,24 +384,24 @@ class PrimDecoder(nn.Module):
             *make_conv_trans(32, 16, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(512, 512)),
             *make_conv_trans(16, vind_ch, 4, 2, 1, "wn", ub=(1024, 1024)),
         )
-        self.vcond_mod = nn.Sequential(
-            *make_conv_trans(
-                256 + 8,
-                256,
-                4,
-                2,
-                1,
-                "wn",
-                nn.LeakyReLU(0.2, inplace=True),
-                ub=(16, 16),
-            ),
-            *make_conv_trans(256, 128, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(32, 32)),
-            *make_conv_trans(128, 128, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(64, 64)),
-            *make_conv_trans(128, 64, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(128, 128)),
-            *make_conv_trans(64, 32, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(256, 256)),
-            *make_conv_trans(32, 16, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(512, 512)),
-            *make_conv_trans(16, vd_ch, 4, 2, 1, "wn", ub=(1024, 1024)),
-        )
+        # self.vcond_mod = nn.Sequential(
+        #     *make_conv_trans(
+        #         256 + 8,
+        #         256,
+        #         4,
+        #         2,
+        #         1,
+        #         "wn",
+        #         nn.LeakyReLU(0.2, inplace=True),
+        #         ub=(16, 16),
+        #     ),
+        #     *make_conv_trans(256, 128, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(32, 32)),
+        #     *make_conv_trans(128, 128, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(64, 64)),
+        #     *make_conv_trans(128, 64, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(128, 128)),
+        #     *make_conv_trans(64, 32, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(256, 256)),
+        #     *make_conv_trans(32, 16, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(512, 512)),
+        #     *make_conv_trans(16, vd_ch, 4, 2, 1, "wn", ub=(1024, 1024)),
+        # )
 
         self.apply(lambda m: la.glorot(m, 0.2))
         la.glorot(self.vnocond_mod[-1], 1.0)
@@ -445,8 +445,8 @@ class PrimDecoder(nn.Module):
         # run view-dependent decoder
         view = self.viewmod(F.normalize(headrel_campos, dim=1))[:, :, None, None].expand(-1, -1, 8, 8)
         embs_v = th.cat([embs, view], dim=1)
-        f_vcond = self.vcond_mod(embs_v)
-        f_vcond = f_vcond.permute(0, 2, 3, 1).view(B, -1, 4)
+        # f_vcond = self.vcond_mod(embs_v)
+        # f_vcond = f_vcond.permute(0, 2, 3, 1).view(B, -1, 4)
 
         # diffuse sh
         # diff_shs = f_vnocond[:, : self.n_diff_coeffs]
@@ -471,7 +471,7 @@ class PrimDecoder(nn.Module):
         sigma = (th.exp(sigma) * 0.1).clamp(min=0.1)
 
         # view-dependent specular strength
-        spec_str = th.sigmoid(f_vcond[..., 3:])
+        spec_str = th.sigmoid(f_vnocond[:, 12:13])
         spec_str = spec_str.view(B, -1)
 
         # view-dependent specular visibility
@@ -479,7 +479,7 @@ class PrimDecoder(nn.Module):
 
         # view-dependent specular normal
         # spec_dnml = f_vcond[..., 1:]
-        spec_dnml = f_vcond[..., :3]
+        spec_dnml = f_vnocond[..., 13:16]
         spec_nml = F.normalize(spec_dnml + primnmlbase, dim=-1)
 
         # albedo
