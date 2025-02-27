@@ -405,7 +405,7 @@ class PrimDecoder(nn.Module):
 
         self.apply(lambda m: la.glorot(m, 0.2))
         la.glorot(self.vnocond_mod[-1], 1.0)
-        la.glorot(self.vcond_mod[-1], 1.0)
+        # la.glorot(self.vcond_mod[-1], 1.0)
 
         rgb = color_mean / 255.0  # [3, tex_res, tex_res]
         albedo = (2.0 * rgb / 2.2974).permute(1, 2, 0).reshape(1, -1, 3)
@@ -479,7 +479,7 @@ class PrimDecoder(nn.Module):
 
         # view-dependent specular normal
         # spec_dnml = f_vcond[..., 1:]
-        spec_dnml = f_vnocond[..., 13:16]
+        spec_dnml = f_vnocond[:, 13:16].permute(0, 2, 3, 1).view(B, -1, 3)
         spec_nml = F.normalize(spec_dnml + primnmlbase, dim=-1)
 
         # albedo
