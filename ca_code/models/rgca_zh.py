@@ -450,11 +450,11 @@ class PrimDecoder(nn.Module):
         f_vcond = f_vcond.permute(0, 2, 3, 1).view(B, -1, 4)
 
         # diffuse sh
-        diff_shs = f_vnocond[:, : self.n_diff_coeffs]
-        diff_shs = diff_shs.permute(0, 2, 3, 1).view(B, -1, self.n_diff_coeffs)
-        diff_shs_color = diff_shs[..., : self.n_color_sh_coeffs * 3].reshape(B, -1, 3, self.n_color_sh_coeffs)
-        diff_shs_mono = diff_shs[..., self.n_color_sh_coeffs * 3 :].reshape(B, -1, 1, self.n_mono_sh_coeffs)
-        diff_shs = th.cat([diff_shs_color, diff_shs_mono.expand(-1, -1, 3, -1)], -1)
+        # diff_shs = f_vnocond[:, : self.n_diff_coeffs]
+        # diff_shs = diff_shs.permute(0, 2, 3, 1).view(B, -1, self.n_diff_coeffs)
+        # diff_shs_color = diff_shs[..., : self.n_color_sh_coeffs * 3].reshape(B, -1, 3, self.n_color_sh_coeffs)
+        # diff_shs_mono = diff_shs[..., self.n_color_sh_coeffs * 3 :].reshape(B, -1, 1, self.n_mono_sh_coeffs)
+        # diff_shs = th.cat([diff_shs_color, diff_shs_mono.expand(-1, -1, 3, -1)], -1)
 
         # diffuse zh
         diff_zhs = f_vnocond[:, : self.n_diff_coeffs]

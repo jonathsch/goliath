@@ -4,15 +4,57 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+
         {
-            "name": "Python Debugger: Current File with Arguments",
+            "name": "Debug train",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/ca_code/scripts/run_train.py",
-            "python": "/rhome/jschmidt/miniconda3/envs/rgca/bin/python",
+            "module": "ca_code.scripts.run_train",
+            "python": "/home/jschmidt/miniconda3/envs/rgca/bin/python",
             "console": "integratedTerminal",
             "args": [
-                "config/rgca_becominglit.yml"
+                "config/rgca_becominglit_nvs.yml",
+                "dataloader.batch_size=1",
+            ],
+            "env": {
+                "CUDA_HOME": "/usr/local/cuda-11.8",
+            }
+        },
+        {
+            "name": "Debug train ZH",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "ca_code.scripts.run_train",
+            "python": "/home/jschmidt/miniconda3/envs/rgca/bin/python",
+            "console": "integratedTerminal",
+            "args": [
+                "config/rgca_becominglit_zh.yml",
+                "dataloader.batch_size=1",
+            ],
+            "env": {
+                "CUDA_HOME": "/usr/local/cuda-11.8",
+            }
+        },
+        {
+            "name": "Debug vis relight",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "ca_code.scripts.run_vis_relight",
+            "python": "/home/jschmidt/miniconda3/envs/rgca/bin/python",
+            "console": "integratedTerminal",
+            "args": [
+                "/mnt/cluster/valinor/jschmidt/logs/goliath/rgca_fix_geom_pbr_shading.1015/debug/config.yml"
+            ]
+        },
+        {
+            "name": "Debug self reenact",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "ca_code.scripts.run_self_reenact",
+            "python": "/home/jschmidt/miniconda3/envs/rgca/bin/python",
+            "console": "integratedTerminal",
+            "args": [
+                "/mnt/cluster/valinor/jschmidt/logs/goliath/rgca_fix_geom_pbr_shading_vnocond.1015/debug/config.yml"
             ]
         }
     ]
