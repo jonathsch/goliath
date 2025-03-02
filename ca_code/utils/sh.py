@@ -141,3 +141,43 @@ def eval_sh(deg: int, sh: th.Tensor, dirs: th.Tensor) -> th.Tensor:
             index += 1
     
     return val
+
+
+def zh_to_sh(zh: th.Tensor, dirs: th.Tensor) -> th.Tensor:
+    """
+    Evaluates zonal harmonics at given directions and returns the spherical harmonics.
+
+    Args:
+        zh: Zonal harmonics coefficients of shape [..., L]
+        dirs: Directions of shape [..., 3]
+
+    Returns:
+        shs: Spherical harmonics of shape [..., (L+1)^2]
+    """
+    theta, phi = dir2angle(dirs)
+
+    L = zh.shape[-1]
+    shs = th.zeros(*zh.shape[:-1], (L + 1) ** 2, device=zh.device)  # [..., (L+1)^2]
+    for n in range(0, L):
+        for m in range(-n, n + 1):
+            i = n**2 + n + m + 1
+            shs[..., i] = zh[..., n] * SphericalHarmonicTorch(m, n, theta, phi)[..., None]
+
+    return shs
+
+
+def eval_zh_tbn_frame(zh: th.Tensor, primrot: th.Tensor):
+    """
+    Zonal harmonics coefficients [B, N, C, L]
+    primrot: gaussian rotation [B, N, 3, 3]
+    """
+    B, N, C, L = zh.shape
+    assert L % C == 0
+    zh_degree = L // 3
+
+    tng = primrot[..., 0]  # [B, N, 3]
+    btg = primrot[..., 1]  # [B, N, 3]
+    nrm = primrot[..., 2]  # [B, N, 3]
+
+    sh = zh_to_sh(zh[..., :zh_degree], tng) + zh_to_sh(zh[..., zh_degree:2*zh_degree], btg) + zh_to_sh(zh[..., 2*zh_degree:], nrm)
+    return sh
