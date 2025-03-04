@@ -159,7 +159,7 @@ class AutoEncoder(nn.Module):
             head_pose_4x4 = th.cat([head_pose, th.zeros_like(head_pose[:, :1, :])], dim=1)
             head_pose_4x4[:, 3, 3] = 1.0
             head_pose = head_pose_4x4
-        
+
         # convert everything into head relative coordinates
         headrel_Rt = Rt @ head_pose
         headrel_campos = ((campos - head_pose[:, :3, 3])[:, None] @ head_pose[:, :3, :3])[:, 0]
@@ -367,15 +367,15 @@ class PrimDecoder(nn.Module):
 
         self.diff_sh_degree = n_diff_sh
         self.color_sh_degree = n_color_sh
-        # self.n_color_sh_coeffs = (n_color_sh + 1) ** 2
-        # self.n_mono_sh_coeffs = (n_diff_sh + 1) ** 2 - self.n_color_sh_coeffs
-        self.n_color_zh_coeffs = n_color_sh
-        self.n_mono_zh_coeffs = n_diff_sh
-        # self.n_diff_coeffs = 3 * self.n_color_sh_coeffs + self.n_mono_sh_coeffs
-        self.n_diff_coeffs = 3 * 3 * self.n_color_zh_coeffs + 3 * self.n_mono_zh_coeffs
+        self.n_color_sh_coeffs = (n_color_sh + 1) ** 2
+        self.n_mono_sh_coeffs = (n_diff_sh + 1) ** 2 - self.n_color_sh_coeffs
+        # self.n_color_zh_coeffs = n_color_sh
+        # self.n_mono_zh_coeffs = n_diff_sh
+        self.n_diff_coeffs = 3 * self.n_color_sh_coeffs + self.n_mono_sh_coeffs
+        # self.n_diff_coeffs = 3 * 3 * self.n_color_zh_coeffs + 3 * self.n_mono_zh_coeffs
 
-        vind_ch = self.n_diff_coeffs + 11 + 1  # diffuse_sh + Gaussian params + roughness
-        vd_ch = 4  # normal + visibility
+        vind_ch = self.n_diff_coeffs + 11 + 1 + 1  # diffuse_sh + Gaussian params + roughness + spec_vis
+        vd_ch = 3  # normal + visibility
         self.vnocond_mod = nn.Sequential(
             *make_conv_trans(256, 256, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(16, 16)),
             *make_conv_trans(256, 128, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(32, 32)),
@@ -447,21 +447,21 @@ class PrimDecoder(nn.Module):
         view = self.viewmod(F.normalize(headrel_campos, dim=1))[:, :, None, None].expand(-1, -1, 8, 8)
         embs_v = th.cat([embs, view], dim=1)
         f_vcond = self.vcond_mod(embs_v)
-        f_vcond = f_vcond.permute(0, 2, 3, 1).view(B, -1, 4)
+        f_vcond = f_vcond.permute(0, 2, 3, 1).view(B, -1, 3)
 
         # diffuse sh
-        # diff_shs = f_vnocond[:, : self.n_diff_coeffs]
-        # diff_shs = diff_shs.permute(0, 2, 3, 1).view(B, -1, self.n_diff_coeffs)
-        # diff_shs_color = diff_shs[..., : self.n_color_sh_coeffs * 3].reshape(B, -1, 3, self.n_color_sh_coeffs)
-        # diff_shs_mono = diff_shs[..., self.n_color_sh_coeffs * 3 :].reshape(B, -1, 1, self.n_mono_sh_coeffs)
-        # diff_shs = th.cat([diff_shs_color, diff_shs_mono.expand(-1, -1, 3, -1)], -1)
+        diff_shs = f_vnocond[:, : self.n_diff_coeffs]
+        diff_shs = diff_shs.permute(0, 2, 3, 1).view(B, -1, self.n_diff_coeffs)
+        diff_shs_color = diff_shs[..., : self.n_color_sh_coeffs * 3].reshape(B, -1, 3, self.n_color_sh_coeffs)
+        diff_shs_mono = diff_shs[..., self.n_color_sh_coeffs * 3 :].reshape(B, -1, 1, self.n_mono_sh_coeffs)
+        diff_shs = th.cat([diff_shs_color, diff_shs_mono.expand(-1, -1, 3, -1)], -1)
 
-        # diffuse zh
-        diff_zhs = f_vnocond[:, : self.n_diff_coeffs]
-        diff_zhs = diff_zhs.permute(0, 2, 3, 1).view(B, -1, self.n_diff_coeffs) # [B, n_prims, n_diff_coeffs]
-        diff_zhs_color = diff_zhs[..., : self.n_color_zh_coeffs * 9].reshape(B, -1, 3, 3, self.n_color_zh_coeffs)
-        diff_zhs_mono = diff_zhs[..., self.n_color_zh_coeffs * 9 :].reshape(B, -1, 1, 3, self.n_mono_zh_coeffs)
-        diff_zhs = th.cat([diff_zhs_color, diff_zhs_mono.expand(-1, -1, 3, -1, -1)], -1)
+        # # diffuse zh
+        # diff_zhs = f_vnocond[:, : self.n_diff_coeffs]
+        # diff_zhs = diff_zhs.permute(0, 2, 3, 1).view(B, -1, self.n_diff_coeffs) # [B, n_prims, n_diff_coeffs]
+        # diff_zhs_color = diff_zhs[..., : self.n_color_zh_coeffs * 9].reshape(B, -1, 3, 3, self.n_color_zh_coeffs)
+        # diff_zhs_mono = diff_zhs[..., self.n_color_zh_coeffs * 9 :].reshape(B, -1, 1, 3, self.n_mono_zh_coeffs)
+        # diff_zhs = th.cat([diff_zhs_color, diff_zhs_mono.expand(-1, -1, 3, -1, -1)], -1)
 
         # Gaussian parameters
         f_geom = f_vnocond[:, self.n_diff_coeffs : self.n_diff_coeffs + 11]
@@ -472,23 +472,25 @@ class PrimDecoder(nn.Module):
         opacity = th.sigmoid(f_geom[..., 10:11])
 
         # roughness
-        sigma = f_vnocond[:, self.n_diff_coeffs + 11 :]
+        sigma = f_vnocond[:, self.n_diff_coeffs + 11 : -1]
         sigma = sigma.permute(0, 2, 3, 1).view(B, -1)
         sigma = (th.exp(sigma) * 0.1).clamp(min=0.01)
 
         # view-dependent specular visibility
-        spec_vis = th.sigmoid(f_vcond[..., :1])
+        # spec_vis = th.sigmoid(f_vcond[..., :1])
+        spec_vis = th.sigmoid(f_vnocond[:, -1:])
+        spec_vis = spec_vis.permute(0, 2, 3, 1).view(B, -1, 1)
 
         # view-dependent specular normal
-        spec_dnml = f_vcond[..., 1:]
+        spec_dnml = f_vcond
         spec_nml = F.normalize(spec_dnml + primnmlbase, dim=-1)
 
         # albedo
         albedo = self.albedo.expand(B, -1, -1)
 
         # compute diffuse color
-        primrot = unitquat_to_rotmat(quat_wxyz_to_xyzw(primqvec)) # [B, n_prims, 3, 3]
-        diff_shs = sh.eval_zh_tbn_frame(diff_zhs, primrot)
+        # primrot = unitquat_to_rotmat(quat_wxyz_to_xyzw(primqvec)) # [B, n_prims, 3, 3]
+        # diff_shs = sh.eval_zh_tbn_frame(diff_zhs, primrot)
         diff_color = albedo * (diff_shs * headrel_light_sh[:, None]).sum(dim=-1)
 
         # compute specular color
@@ -517,11 +519,12 @@ class PrimDecoder(nn.Module):
                 * spec_vis
             )
 
-        # color = diff_color.clamp(min=0.0) + spec_color
-        color = albedo # NOTE: Debugging: Disable appearance model for now
+        color = diff_color.clamp(min=0.0) + spec_color
 
         preds.update(
             albedo=albedo.clamp(min=0.0),
+            diffuse=diff_color.clamp(min=0.0),
+            specular=spec_color,
             color=color.clamp(min=0.0),
             opacity=opacity,
             primpos=primpos,
