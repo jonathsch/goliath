@@ -150,6 +150,7 @@ class AutoEncoder(nn.Module):
         iteration: Optional[int] = None,
         preconv_envmap: Optional[th.Tensor] = None,
         lightrot: Optional[th.Tensor] = None,
+        render_aux: bool = False,
         **kwargs,
     ) -> Dict[str, Any]:
         light_intensity = light_intensity.expand(-1, -1, 3)
@@ -196,6 +197,13 @@ class AutoEncoder(nn.Module):
 
         # rendering
         rgb, alpha, depth = self.render(K, headrel_Rt, preds)
+
+        if render_aux:
+            aux_render_inputs = {k: v for k, v in preds.items() if k in ["primpos", "primqvec", "primscale", "opacity"]}
+            for aux_mod in ["diffuse", "specular", "albedo", "spec_nml"]:
+                aux_render_inputs["color"] = preds[aux_mod]
+                aux_render, _, _ = self.render(K, headrel_Rt, aux_render_inputs)
+                preds[f"render_{aux_mod}"] = aux_render
 
         if not th.jit.is_scripting() and self.cal_enabled:
             rgb = self.cal(rgb, self.cal.name_to_idx(camera_id))
@@ -508,6 +516,8 @@ class PrimDecoder(nn.Module):
 
         preds.update(
             albedo=albedo.clamp(min=0.0),
+            diffuse=diff_color.clamp(min=0.0),
+            specular=spec_color,
             color=color.clamp(min=0.0),
             opacity=opacity,
             primpos=primpos,
