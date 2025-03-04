@@ -157,10 +157,10 @@ def zh_to_sh(zh: th.Tensor, dirs: th.Tensor) -> th.Tensor:
     theta, phi = dir2angle(dirs)
 
     L = zh.shape[-1]
-    shs = th.zeros(*zh.shape[:-1], (L + 1) ** 2, device=zh.device)  # [..., (L+1)^2]
+    shs = th.zeros(*zh.shape[:-1], (L) ** 2, device=zh.device)  # [..., (L+1)^2]
     for n in range(0, L):
         for m in range(-n, n + 1):
-            i = n**2 + n + m + 1
+            i = n**2 + n + m
             shs[..., i] = zh[..., n] * SphericalHarmonicTorch(m, n, theta, phi)[..., None]
 
     return shs
