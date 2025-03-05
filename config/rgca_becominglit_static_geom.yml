@@ -100,8 +100,8 @@ train:
   # CHANGE ME
   n_max_iters: 200_000
   log_every_n_steps: 100
-  summary_every_n_steps: 5_000
-  ckpt_every_n_steps: 50_000
+  summary_every_n_steps: 1_000
+  ckpt_every_n_steps: 25_000
 
 test:
   ckpt:
