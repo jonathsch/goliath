@@ -273,6 +273,9 @@ class GeometryModule(nn.Module):
     def from_uv(self, values_uv):
         # TODO: we need to sample this
         return sample_uv(values_uv, self.vt, self.v2uv.to(th.long))
+    
+    def v_tng(self, verts, v_nrm):
+        return compute_vertex_tangents(verts, self.vi, self.vt, self.vti, v_nrm)
 
 
 def sample_uv(
@@ -793,6 +796,71 @@ def depth_discontuity_mask(
 
     return disc_mask
 
+def compute_vertex_tangents(verts, faces, vert_uvs, tex_idx, vertex_normals):
+    r"""Compute vertex tangents.
+
+    The vertex tangents are useful to apply normal maps during rendering.
+
+    .. seealso::
+
+        https://en.wikipedia.org/wiki/Normal_mapping#Calculating_tangent_space
+
+    Args:
+       faces (torch.LongTensor): unbatched triangle mesh faces, of shape
+                                 :math:`(\text{num_faces}, 3)`.
+       face_vertices (torch.Tensor): unbatched triangle face vertices, of shape
+                                     :math:`(\text{num_faces}, 3, 3)`.
+       face_uvs (torch.Tensor): unbatched triangle UVs, of shape
+                                :math:`(\text{num_faces}, 3, 2)`.
+       vertex_normals (torch.Tensor): unbatched vertex normals, of shape
+                                      :math:`(\text{num_vertices}, 3)`.
+
+    Returns:
+       (torch.Tensor): The vertex tangents, of shape :math:`(\text{num_vertices, 3})`
+    """
+    # This function is strongly inspired by
+    # https://github.com/NVlabs/nvdiffrec/blob/main/render/mesh.py#L203
+    tangents = th.zeros_like(vertex_normals)
+
+    v0 = verts[..., faces[..., 0], :]
+    v1 = verts[..., faces[..., 1], :]
+    v2 = verts[..., faces[..., 2], :]
+    tri_xyz = th.stack([v0, v1, v2], dim=-2)  # [B, N, 3, 3]
+
+    vt0 = vert_uvs[..., tex_idx[..., 0], :]
+    vt1 = vert_uvs[..., tex_idx[..., 1], :]
+    vt2 = vert_uvs[..., tex_idx[..., 2], :]
+    tri_uv = th.stack([vt0, vt1, vt2], dim=-2)  # [B, N, 3, 2]
+
+    face_uvs0, face_uvs1, face_uvs2 = th.split(tri_uv, 1, dim=-2)
+    fv0, fv1, fv2 = th.split(tri_xyz, 1, dim=-2)
+    uve1 = face_uvs1 - face_uvs0
+    uve2 = face_uvs2 - face_uvs0
+    pe1 = (fv1 - fv0).squeeze(-2)
+    pe2 = (fv2 - fv0).squeeze(-2)
+
+    nom = pe1 * uve2[..., 1] - pe2 * uve1[..., 1]
+    denom = uve1[..., 0] * uve2[..., 1] - uve1[..., 1] * uve2[..., 0]
+    # Avoid division by zero for degenerated texture coordinates
+    tang = nom / th.where(denom > 0.0, th.clamp(denom, min=1e-6), th.clamp(denom, max=-1e-6))
+    vn_idx = th.split(faces, 1, dim=-1)
+    indexing_dim = 0 if tri_xyz.ndim == 3 else 1
+    # TODO(cfujitsang): optimizable?
+    for i in range(3):
+        idx = vn_idx[i].repeat(1, 3)
+        if indexing_dim == 1:
+            idx = idx[None].repeat(tangents.shape[0], 1, 1)
+        tangents.scatter_add_(indexing_dim, idx.long(), tang)
+    # Normalize and make sure tangent is perpendicular to normal
+    tangents = th.nn.functional.normalize(tangents, dim=-1)
+    tangents = th.nn.functional.normalize(
+        tangents - th.sum(tangents * vertex_normals, dim=-1, keepdim=True) * vertex_normals, dim=-1
+    )
+
+    if th.is_anomaly_enabled():
+        assert th.all(th.isfinite(tangents))
+
+    return tangents
 
 def vertex_tn(
     face_tangents: th.Tensor,

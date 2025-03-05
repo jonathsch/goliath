@@ -12,6 +12,7 @@ import torch as th
 import torch.nn.functional as F
 from torch import nn
 from torchvision.utils import make_grid
+from roma import rotmat_to_unitquat, quat_product, quat_wxyz_to_xyzw, quat_xyzw_to_wxyz
 
 import ca_code.nn.layers as la
 from ca_code.nn.color_cal import CalV5
@@ -159,7 +160,7 @@ class AutoEncoder(nn.Module):
             head_pose_4x4 = th.cat([head_pose, th.zeros_like(head_pose[:, :1, :])], dim=1)
             head_pose_4x4[:, 3, 3] = 1.0
             head_pose = head_pose_4x4
-        
+
         # convert everything into head relative coordinates
         headrel_Rt = Rt @ head_pose
         headrel_campos = ((campos - head_pose[:, :3, 3])[:, None] @ head_pose[:, :3, :3])[:, 0]
@@ -378,7 +379,7 @@ class PrimDecoder(nn.Module):
         self.n_mono_sh_coeffs = (n_diff_sh + 1) ** 2 - self.n_color_sh_coeffs
         self.n_diff_coeffs = 3 * self.n_color_sh_coeffs + self.n_mono_sh_coeffs
 
-        vind_ch = self.n_diff_coeffs + 1  # diffuse_sh + Gaussian params + roughness
+        vind_ch = self.n_diff_coeffs + 1  # diffuse_sh + roughness
         vd_ch = 4  # normal + visibility
         self.vnocond_mod = nn.Sequential(
             *make_conv_trans(256, 256, 4, 2, 1, "wn", nn.LeakyReLU(0.2, inplace=True), ub=(16, 16)),
@@ -423,6 +424,25 @@ class PrimDecoder(nn.Module):
         scale = 0.5 * th.ones(self.slabsize, self.slabsize, 3)
         opacity = 0.8 * th.ones(self.slabsize, self.slabsize, 1)
         self.f_geom = nn.Parameter(th.cat([pos, qvec, scale, opacity], dim=-1))
+
+    def warp_cano_to_posed(self, f_geom, v_pos, v_nml, v_tng):
+        # Compute TBN frame in UV space
+        nml_uv = self.geo_fn.to_uv(v_nml).permute(0, 2, 3, 1)
+        tng_uv = self.geo_fn.to_uv(v_tng).permute(0, 2, 3, 1)
+        tng_uv = F.normalize(tng_uv - (tng_uv * nml_uv).sum(dim=-1, keepdim=True) * nml_uv, dim=-1)  # orthogonalize
+        btg_uv = th.cross(nml_uv, tng_uv, dim=-1)
+        tbn_uv = th.stack([tng_uv, btg_uv, nml_uv], dim=-1)
+
+        # position
+        primpos_base = self.geo_fn.to_uv(v_pos).permute(0, 2, 3, 1)  # [B, slabsize, slabsize, 3]
+        primpos = primpos_base + (tbn_uv @ f_geom[..., :3][None, ..., None]).squeeze(-1)  # [B, slabsize, slabsize, 3]
+
+        # rotation
+        quats = F.normalize(f_geom[..., 3:7], dim=-1)
+        tbn_quat = rotmat_to_unitquat(tbn_uv)
+        prim_qvec = quat_xyzw_to_wxyz(quat_product(tbn_quat, quat_wxyz_to_xyzw(quats[None])))
+
+        return primpos, prim_qvec
 
     def forward(
         self,
@@ -469,15 +489,21 @@ class PrimDecoder(nn.Module):
         diff_shs = th.cat([diff_shs_color, diff_shs_mono.expand(-1, -1, 3, -1)], -1)
 
         # Gaussian parameters
-        f_geom = f_vnocond[:, self.n_diff_coeffs : self.n_diff_coeffs + 11]
-        f_geom = f_geom.permute(0, 2, 3, 1).view(B, -1, 11)
-        primpos = f_geom[..., 0:3] + primposbase
-        primqvec = F.normalize(f_geom[..., 3:7], dim=-1)
-        primscale = F.softplus(f_geom[..., 7:10])
-        opacity = th.sigmoid(f_geom[..., 10:11])
+        # f_geom = f_vnocond[:, self.n_diff_coeffs : self.n_diff_coeffs + 11]
+        # f_geom = f_geom.permute(0, 2, 3, 1).view(B, -1, 11)
+        # primpos = f_geom[..., 0:3] + primposbase
+        # primqvec = F.normalize(f_geom[..., 3:7], dim=-1)
+        # primscale = F.softplus(f_geom[..., 7:10])
+        # opacity = th.sigmoid(f_geom[..., 10:11])
+        v_tng = self.geo_fn.v_tng(geom, vn)
+        primpos, primqvec = self.warp_cano_to_posed(self.f_geom, geom, vn, v_tng)
+        primpos = primpos.reshape(B, -1, 3)
+        primqvec = primqvec.reshape(B, -1, 4)
+        primscale = F.softplus(self.f_geom[..., 7:10]).unsqueeze(0).repeat(B, 1, 1, 1).reshape(B, -1, 3)
+        opacity = th.sigmoid(self.f_geom[..., 10:11]).unsqueeze(0).repeat(B, 1, 1, 1).reshape(B, -1, 1)
 
         # roughness
-        sigma = f_vnocond[:, self.n_diff_coeffs + 11 :]
+        sigma = f_vnocond[:, self.n_diff_coeffs :]
         sigma = sigma.permute(0, 2, 3, 1).view(B, -1)
         sigma = (th.exp(sigma) * 0.1).clamp(min=0.01)
 
@@ -660,6 +686,6 @@ class RGCASummary(Callable):
         bdi = cv2.resize(bdi, fx=0.5, fy=0.5, dsize=None, interpolation=cv2.INTER_LINEAR)
 
         for k, v in diag.items():
-            diag[k] = make_grid(255.0 * v, nrow=16).clip(0, 255).to(th.uint8)
+            diag[k] = make_grid(255.0 * v, nrow=16).clip(0, 255).permute(1, 2, 0).byte().cpu().numpy()
 
         return diag

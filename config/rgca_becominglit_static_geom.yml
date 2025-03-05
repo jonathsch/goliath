@@ -5,7 +5,7 @@ root_dir: /cluster/valinor/jschmidt/becominglit
 data:
   root_path: ${root_dir}
   subject: ${sid}
-  sequences: ["HEADROT"]
+  sequences: ["HEADROT", "TALK", "WRINKLE_SOFT", "JAW_SOFT"]
   fully_lit_only: False
 
 dataloader:
@@ -16,10 +16,10 @@ dataloader:
   persistent_workers: True
   shuffle: True
 
-model_name: rgca_fix_geom_zonal_harmonics
+model_name: rgca_static_geom
 
 model:
-  class_name: ca_code.models.rgca_zh.AutoEncoder
+  class_name: ca_code.models.rgca_static_geom.AutoEncoder
 
   n_embs: 256
   image_height: 1604
@@ -39,7 +39,7 @@ model:
   learn_blur: true
 
 summary:
-  class_name: ca_code.models.rgca_zh.RGCASummary
+  class_name: ca_code.models.rgca_static_geom.RGCASummary
 
 loss:
   class_name: ca_code.loss.ModularLoss
@@ -100,7 +100,7 @@ train:
   # CHANGE ME
   n_max_iters: 200_000
   log_every_n_steps: 100
-  summary_every_n_steps: 10_000
+  summary_every_n_steps: 5_000
   ckpt_every_n_steps: 50_000
 
 test:
