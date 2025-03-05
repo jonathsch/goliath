@@ -5,12 +5,28 @@ root_dir: /cluster/valinor/jschmidt/becominglit
 data:
   root_path: ${root_dir}
   subject: ${sid}
-  sequences: ["HEADROT"]
-  fully_lit_only: False
+  # sequences: ["HEADROT", "TALK", "WRINKLE_SOFT", "JAW_SOFT"]
+  sequences: ["EXP-1", "EXP-2", "SEN-01", "SEN-02", "SEN-03", "FREE"]
+  fully_lit_only: false
+  cameras_subset:
+    - "222200042"
+    - "222200044"
+    - "222200046"
+    - "222200040"
+    - "222200036"
+    - "222200048"
+    - "220700191"
+    - "222200041"
+    - "222200038"
+    - "222200047"
+    - "222200043"
+    - "222200049"
+    - "222200039"
+    - "221501007"
 
 dataloader:
   batch_size: 8
-  num_workers: 8
+  num_workers: 16
   prefetch_factor: 2
   pin_memory: True
   persistent_workers: True
@@ -32,9 +48,6 @@ model:
 
   decoder:
     n_color_sh: 3
-
-  cal:
-    identity_camera: 222200037
 
   learn_blur: true
 
@@ -74,7 +87,6 @@ loss:
     learn_blur: 0.001
     kl: 0.002
 
-
 lr: 5.0e-4
 optimizer:
   class_name: torch.optim.Adam
@@ -99,8 +111,8 @@ train:
 
   # CHANGE ME
   n_max_iters: 200_000
-  log_every_n_steps: 50
-  summary_every_n_steps: 10_000
+  log_every_n_steps: 100
+  summary_every_n_steps: 5_000
   ckpt_every_n_steps: 50_000
 
 test:
@@ -113,7 +125,8 @@ test:
   data:
     root_path: ${data.root_path}
     subject: ${sid}
-    sequence: "EXP-2"
+    sequence: "TALK"
     fully_lit_only: False
     cameras_subset:
       - "222200037"
+      - "222200045"
