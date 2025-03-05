@@ -5,7 +5,7 @@ root_dir: /cluster/valinor/jschmidt/becominglit
 data:
   root_path: ${root_dir}
   subject: ${sid}
-  sequences: ["HEADROT"]
+  sequences: ["HEADROT", "TALK", "WRINKLE_SOFT", "JAW_SOFT"]
   fully_lit_only: False
 
 dataloader:
