@@ -89,7 +89,7 @@ class BecomingLitDataset(Dataset):
 
         return {cid: (K, w2c) for cid, w2c in w2c.items()}
 
-    @lru_cache(maxsize=NUM_SEQUENCES*CACHE_LENGTH)
+    @lru_cache(maxsize=NUM_SEQUENCES * CACHE_LENGTH)
     def get_camera_parameters(self, cam_id: str) -> Dict[str, Any]:
         K, w2c = self.get_camera_calibration()[cam_id]
         R = w2c[:3, :3]
@@ -162,7 +162,15 @@ class BecomingLitDataset(Dataset):
         return pil_to_tensor(Image.open(img_path))
 
     def load_alpha(self, frame_id: int, cam_id: str) -> Image.Image:
-        alpha_path = self.seq_folder / "flame_tracking" / "alpha_masks_birefnet" / f"cam_{cam_id}" / f"frame_{frame_id:06d}_union.jpg"
+        alpha_path = (
+            self.seq_folder
+            / "flame_tracking"
+            / "alpha_masks_birefnet"
+            / f"cam_{cam_id}"
+            / f"frame_{frame_id:06d}_union.jpg"
+        )
+        if not alpha_path.exists():
+            return None
         return pil_to_tensor(Image.open(alpha_path))
 
     @lru_cache(maxsize=CACHE_LENGTH)
@@ -228,13 +236,20 @@ class BecomingLitDataset(Dataset):
         return pose.astype(np.float32)
 
     def batch_filter(self, batch):
-        batch["image"] = batch["image"].float()
-        batch["background"] = batch["background"].float()
+        batch["image"] = batch["image"].float() / 255.0
+        batch["alpha"] = batch["alpha"].float() / 255.0
+        batch["background"] = batch["background"].float() / 255.0
 
-        # NOTE: Optional black level subtraction goes here
+        # Alpha segmentation
+        if batch["image"].size() != batch["alpha"].size():
+            batch["alpha"] = F.interpolate(
+                batch["alpha"][None], size=(batch["image"].shape[1], batch["image"].shape[2]), mode="bilinear"
+            )[0]
+        batch["image"] = batch["image"] * batch["alpha"]
 
-        batch["image"] = srgb2linear((batch["image"] / 255.0)).clamp(0, 1)
-        batch["background"] = srgb2linear((batch["background"] / 255.0)).clamp(0, 1)
+        # Convert to linear RGB space
+        batch["image"] = srgb2linear((batch["image"])).clamp(0, 1)
+        batch["background"] = srgb2linear((batch["background"])).clamp(0, 1)
 
     @property
     def static_assets(self) -> Dict[str, Any]:
@@ -270,12 +285,10 @@ class BecomingLitDataset(Dataset):
 
     def _get_fn(self, frame: int, camera: str) -> Dict[str, Any]:
         is_fully_lit_frame: bool = frame in self.get_frame_list(fully_lit_only=True)
-        image = self.load_image(frame, camera).float() / 255.0
-        alpha = self.load_alpha(frame, camera).float() / 255.0
-        if image.size() != alpha.size():
-            alpha = F.interpolate(alpha[None], size=(image.shape[1], image.shape[2]), mode="bilinear")[0]
-        image = image * alpha
-        image = (image * 255.0).clamp(0, 255).byte()
+        image = self.load_image(frame, camera)
+        alpha = self.load_alpha(frame, camera)
+        if alpha is None:
+            alpha = torch.ones_like(image) * 255.0
 
         head_pose = self.load_head_pose(frame)
         # kpts = self.load_3d_keypoints(frame)
@@ -288,7 +301,7 @@ class BecomingLitDataset(Dataset):
         light_pattern = self.load_light_pattern()
         light_pattern = {f[0]: f[1] for f in light_pattern}
         light_pattern_meta = self.load_light_pattern_meta()
-        light_pos_all = torch.FloatTensor(light_pattern_meta["light_positions"]) * 1000 # meters to millimeters
+        light_pos_all = torch.FloatTensor(light_pattern_meta["light_positions"]) * 1000  # meters to millimeters
         n_lights_all = light_pos_all.shape[0]
         lightinfo = torch.IntTensor(light_pattern_meta["light_pattern"][light_pattern[frame]]["light_index_durations"])
         n_lights = lightinfo.shape[0]
@@ -321,6 +334,7 @@ class BecomingLitDataset(Dataset):
             "is_fully_lit_frame": is_fully_lit_frame,
             "head_pose": head_pose,
             "image": image,
+            "alpha": alpha,
             "registration_vertices": reg_verts,
             "light_pos": light_pos,
             "light_intensity": light_intensity,
