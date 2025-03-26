@@ -38,7 +38,7 @@ class BecomingLitDataset(Dataset):
         partially_lit_only: bool = False,
         cameras_subset: Optional[Iterable[str]] = None,
         frames_subset: Optional[Iterable[int]] = None,
-        lights_subset: Optional[Iterable[int]] = None,
+        light_pattern_subset: Optional[Iterable[int]] = None,
     ):
         self.root_path: Path = Path(root_path)
         self.subject: str = str(subject)
@@ -54,6 +54,9 @@ class BecomingLitDataset(Dataset):
 
         self.frames_subset = set(frames_subset or {})
         self.frames_subset = set(map(int, self.frames_subset))
+
+        self.light_pattern_subset = set(light_pattern_subset or {})
+        self.light_pattern_subset = set(map(int, self.light_pattern_subset))
 
     @property
     def seq_folder(self) -> Path:
@@ -120,6 +123,14 @@ class BecomingLitDataset(Dataset):
         frames = frames.intersection(vert_frames)
         if self.frames_subset:
             frames = frames.intersection(self.frames_subset)
+        
+        if self.light_pattern_subset:
+            light_pattern = self.load_light_pattern()
+            light_pattern = {f[0]: f[1] for f in light_pattern}  # frame_id -> light_pattern_idx
+            light_pattern = {
+                frame: light_idx for frame, light_idx in light_pattern.items() if light_idx in self.light_pattern_subset
+            }
+            frames = frames.intersection(light_pattern.keys())
 
         return sorted(list(frames))
 
