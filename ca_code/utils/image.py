@@ -25,9 +25,7 @@ def linear2srgb(img: th.Tensor, gamma: float = 2.4) -> th.Tensor: ...
 def linear2srgb(img: np.ndarray, gamma: float = 2.4) -> np.ndarray: ...
 
 
-def linear2srgb(
-    img: Union[th.Tensor, np.ndarray], gamma: float = 2.4
-) -> Union[th.Tensor, np.ndarray]:
+def linear2srgb(img: Union[th.Tensor, np.ndarray], gamma: float = 2.4) -> Union[th.Tensor, np.ndarray]:
     if isinstance(img, th.Tensor):
         # Note: The following combines the linear and exponential parts of the sRGB curve without
         # causing NaN values or gradients for negative inputs (where the curve would be linear).
@@ -48,9 +46,7 @@ def linear2color_corr(img: th.Tensor, dim: int = -1) -> th.Tensor: ...
 def linear2color_corr(img: np.ndarray, dim: int = -1) -> np.ndarray: ...
 
 
-def linear2color_corr(
-    img: Union[th.Tensor, np.ndarray], dim: int = -1
-) -> Union[th.Tensor, np.ndarray]:
+def linear2color_corr(img: Union[th.Tensor, np.ndarray], dim: int = -1) -> Union[th.Tensor, np.ndarray]:
     """Applies ad-hoc 'color correction' to a linear RGB Mugsy image along
     color channel `dim` and returns the gamma-corrected result."""
 
@@ -65,28 +61,18 @@ def linear2color_corr(
     if dim == -1:
         dim = len(img.shape) - 1
     if isinstance(img, th.Tensor):
-        scale = th.FloatTensor(color_scale).view(
-            [3 if i == dim else 1 for i in range(img.dim())]
-        )
+        scale = th.FloatTensor(color_scale).view([3 if i == dim else 1 for i in range(img.dim())])
         img = img * scale.to(img) / 1.1
         return th.clamp(
-            (
-                ((1.0 / (1 - black)) * 0.95 * th.clamp(img - black, 0, 2)).pow(
-                    1.0 / gamma
-                )
-            )
-            - 15.0 / 255.0,
+            (((1.0 / (1 - black)) * 0.95 * th.clamp(img - black, 0, 2)).pow(1.0 / gamma)) - 15.0 / 255.0,
             0,
             2,
         )
     else:
-        scale = np.array(color_scale).reshape(
-            [3 if i == dim else 1 for i in range(img.ndim)]
-        )
+        scale = np.array(color_scale).reshape([3 if i == dim else 1 for i in range(img.ndim)])
         img = img * scale / 1.1
         return np.clip(
-            (((1.0 / (1 - black)) * 0.95 * np.clip(img - black, 0, 2)) ** (1.0 / gamma))
-            - 15.0 / 255.0,
+            (((1.0 / (1 - black)) * 0.95 * np.clip(img - black, 0, 2)) ** (1.0 / gamma)) - 15.0 / 255.0,
             0,
             2,
         )
@@ -120,9 +106,7 @@ def linear2color_corr_inv(img: th.Tensor, dim: int) -> th.Tensor:
     assert img.shape[dim] == 3
     if dim == -1:
         dim = len(img.shape) - 1
-    scale = th.FloatTensor(color_scale).view(
-        [3 if i == dim else 1 for i in range(img.dim())]
-    )
+    scale = th.FloatTensor(color_scale).view([3 if i == dim else 1 for i in range(img.dim())])
 
     img = (img + 15.0 / 255.0).pow(gamma) / (0.95 / (1 - black)) + black
 
@@ -298,9 +282,7 @@ def srgb2linear(img: th.Tensor, gamma: float = 2.4) -> th.Tensor: ...
 def srgb2linear(img: np.ndarray, gamma: float = 2.4) -> np.ndarray: ...
 
 
-def srgb2linear(
-    img: Union[th.Tensor, np.ndarray], gamma: float = 2.4
-) -> Union[th.Tensor, np.ndarray]:
+def srgb2linear(img: Union[th.Tensor, np.ndarray], gamma: float = 2.4) -> Union[th.Tensor, np.ndarray]:
     linear_part = img / 12.92  # linear part of sRGB curve
     if isinstance(img, th.Tensor):
         # Note: The following combines the linear and exponential parts of the sRGB curve without
@@ -319,15 +301,11 @@ def scale_diff_image(diff_img: th.Tensor) -> th.Tensor:
 
     mval = abs(diff_img).max().item()
     pix_range = (0, 128 if mval > 1 else 0.5, 255 if mval > 1 else 1)
-    return (pix_range[1] * (diff_img / mval) + pix_range[1]).clamp(
-        pix_range[0], pix_range[2]
-    )
+    return (pix_range[1] * (diff_img / mval) + pix_range[1]).clamp(pix_range[0], pix_range[2])
 
 
 class LaplacianTexture(th.nn.Module):
-    def __init__(
-        self, n_levels: int, n_channels: int = 3, init_scalar: Optional[float] = None
-    ) -> None:
+    def __init__(self, n_levels: int, n_channels: int = 3, init_scalar: Optional[float] = None) -> None:
         super().__init__()
         self.n_levels = n_levels
         self.n_channels = n_channels
@@ -337,27 +315,16 @@ class LaplacianTexture(th.nn.Module):
         pyr_texs = []
         for level in range(n_levels):
             if init_scalar is not None:
-                pyr_texs.append(
-                    th.nn.Parameter(
-                        init_scalar * th.ones(1, n_channels, 2**level, 2**level)
-                    )
-                )
+                pyr_texs.append(th.nn.Parameter(init_scalar * th.ones(1, n_channels, 2**level, 2**level)))
             else:
-                pyr_texs.append(
-                    th.nn.Parameter(th.zeros(1, n_channels, 2**level, 2**level))
-                )
+                pyr_texs.append(th.nn.Parameter(th.zeros(1, n_channels, 2**level, 2**level)))
 
         self.pyr_texs = th.nn.ParameterList(pyr_texs)
 
     def forward(self) -> th.Tensor:
         tex = self.pyr_texs[0]
         for level in range(1, self.n_levels):
-            tex = (
-                thf.interpolate(
-                    tex, scale_factor=2, mode="bilinear", align_corners=False
-                )
-                + self.pyr_texs[level]
-            )
+            tex = thf.interpolate(tex, scale_factor=2, mode="bilinear", align_corners=False) + self.pyr_texs[level]
         return tex
 
     def init_from_tex(self, tex: th.Tensor) -> None:
@@ -379,10 +346,7 @@ class LaplacianTexture(th.nn.Module):
         gtex = self.pyr_texs[0].grad
         for level in range(1, self.n_levels):
             gtex = (
-                thf.interpolate(
-                    gtex, scale_factor=2, mode="bilinear", align_corners=False
-                )
-                + self.pyr_texs[level].grad
+                thf.interpolate(gtex, scale_factor=2, mode="bilinear", align_corners=False) + self.pyr_texs[level].grad
             )
         return gtex
 
@@ -432,9 +396,7 @@ def smootherstep(e0: np.ndarray, e1: np.ndarray, x: np.ndarray) -> np.ndarray:
     return (t**3) * (t * (t * 6 - 15) + 10)
 
 
-def tensor2rgbjet(
-    tensor: th.Tensor, x_max: Optional[float] = None, x_min: Optional[float] = None
-) -> np.ndarray:
+def tensor2rgbjet(tensor: th.Tensor, x_max: Optional[float] = None, x_min: Optional[float] = None) -> np.ndarray:
     """Converts a tensor to an uint8 image Numpy array with `cv2.COLORMAP_JET` applied.
 
     Args:
@@ -446,14 +408,10 @@ def tensor2rgbjet(
         x_min: The output color will be normalized as (x-x_min)/(x_max-x_min)*255.
         x_min = tensor.min() if None is given.
     """
-    return cv2.applyColorMap(
-        tensor2rgb(tensor, x_max=x_max, x_min=x_min), cv2.COLORMAP_JET
-    )
+    return cv2.applyColorMap(tensor2rgb(tensor, x_max=x_max, x_min=x_min), cv2.COLORMAP_JET)
 
 
-def tensor2rgb(
-    tensor: th.Tensor, x_max: Optional[float] = None, x_min: Optional[float] = None
-) -> np.ndarray:
+def tensor2rgb(tensor: th.Tensor, x_max: Optional[float] = None, x_min: Optional[float] = None) -> np.ndarray:
     """Converts a tensor to an uint8 image Numpy array.
 
     Args:
@@ -612,9 +570,7 @@ def feature2rgb(x: Union[th.Tensor, np.ndarray], scale: int = -1) -> np.ndarray:
     rgb_norm = (rgb - rgb.min()) / (rgb.max() - rgb.min())
     rgb_norm = (rgb_norm * 255).astype(np.uint8)
     if scale != -1:
-        rgb_norm = cv2.resize(
-            rgb_norm, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC
-        )
+        rgb_norm = cv2.resize(rgb_norm, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
     return rgb_norm
 
 
@@ -627,9 +583,7 @@ def kpts2delta(kpts: th.Tensor, size: Sequence[int]) -> th.Tensor:
         th.arange(w, dtype=kpts.dtype, device=kpts.device),
         indexing="xy",
     )
-    delta = kpts.unflatten(-1, (1, 1, 2)) - th.stack(grid, dim=-1).unflatten(
-        0, (1, 1, h)
-    )
+    delta = kpts.unflatten(-1, (1, 1, 2)) - th.stack(grid, dim=-1).unflatten(0, (1, 1, h))
     return delta
 
 
@@ -684,26 +638,20 @@ def make_image_grid(
         if data[key].shape[1] == 1:
             data[key] = data[key].expand(-1, 3, -1, -1)
         elif data[key].shape[1] != 3:
-            raise ValueError(
-                f"Image data must all be of shape [N, {1,3}, H, W]. Got shape {data[key].shape}."
-            )
+            raise ValueError(f"Image data must all be of shape [N, {1, 3}, H, W]. Got shape {data[key].shape}.")
 
         data[key] = data[key].clamp(min=0, max=255)
         if data[key].shape[2] != img_h or data[key].shape[3] != img_w:
             data[key] = thf.interpolate(data[key], size=(img_h, img_w), mode="area")
 
         if scale_factor is not None:
-            data[key] = thf.interpolate(
-                data[key], scale_factor=scale_factor, mode="area"
-            )
+            data[key] = thf.interpolate(data[key], scale_factor=scale_factor, mode="area")
 
     # Make an image for each grid cell by labeling and concatenating a sample
     # from each key in the data.
     cell_imgs = []
     for i in range(n_cells):
-        imgs = [
-            data[key][i].byte().cpu().numpy().transpose(1, 2, 0) for key in keys_to_draw
-        ]
+        imgs = [data[key][i].byte().cpu().numpy().transpose(1, 2, 0) for key in keys_to_draw]
         imgs = [np.ascontiguousarray(img) for img in imgs]
         if draw_labels:
             for img, label in zip(imgs, keys_to_draw):
@@ -735,9 +683,7 @@ def make_image_grid(
     if grid_size is not None:
         gh, gw = grid_size
         if gh * gw < n_cells:
-            raise ValueError(
-                f"Requested grid size ({gh}, {gw}) (H, W) cannot hold {n_cells} images."
-            )
+            raise ValueError(f"Requested grid size ({gh}, {gw}) (H, W) cannot hold {n_cells} images.")
     else:
         best_diff = np.inf
         best_side = np.inf
@@ -754,11 +700,7 @@ def make_image_grid(
                 max_side = max(gh_, gw_)
                 leftover = gh_ * gw_ - n_cells
 
-                if (
-                    diff <= best_diff
-                    and max_side <= best_side
-                    and leftover <= best_leftover
-                ):
+                if diff <= best_diff and max_side <= best_side and leftover <= best_leftover:
                     gh = gh_
                     gw = gw_
                     best_diff = diff
@@ -770,9 +712,7 @@ def make_image_grid(
     for i in range(n_cells):
         gr = i // gw
         gc = i % gw
-        img[gr * cell_h : (gr + 1) * cell_h, gc * cell_w : (gc + 1) * cell_w] = (
-            cell_imgs[i]
-        )
+        img[gr * cell_h : (gr + 1) * cell_h, gc * cell_w : (gc + 1) * cell_w] = cell_imgs[i]
 
     return img
 
@@ -827,15 +767,11 @@ def make_image_grid_batched(
 
     with th.no_grad():
         # Make all images contain 3 channels
-        data_list = [
-            x.expand(-1, 3, -1, -1) if x.shape[1] == 1 else x for x in data_list
-        ]
+        data_list = [x.expand(-1, 3, -1, -1) if x.shape[1] == 1 else x for x in data_list]
 
         # Convert to byte
         scale = 255.0 if input_is_in_0_1 else 1.0
-        data_list = [
-            x.mul(scale).round().clamp(min=0, max=255).byte() for x in data_list
-        ]
+        data_list = [x.mul(scale).round().clamp(min=0, max=255).byte() for x in data_list]
 
         # Convert to numpy and make it BHWC
         data_list = [x.cpu().numpy().transpose(0, 2, 3, 1) for x in data_list]
@@ -988,9 +924,7 @@ def tensor_to_rgb_array(tensor: th.Tensor) -> np.ndarray:
     return tensor.permute(0, 2, 3, 1).detach().cpu().numpy()
 
 
-def draw_keypoints_with_color(
-    image: np.ndarray, keypoints_uvw: np.ndarray, color: Color
-) -> np.ndarray:
+def draw_keypoints_with_color(image: np.ndarray, keypoints_uvw: np.ndarray, color: Color) -> np.ndarray:
     """Renders keypoints onto a given image with particular color.
     Supports overlaps.
     """
@@ -1023,3 +957,42 @@ def draw_contour(img: np.ndarray, contour_corrs: np.ndarray) -> np.ndarray:
         )
 
     return img
+
+
+# ----------------------------------------------------------------------------
+# Image scaling
+# ----------------------------------------------------------------------------
+
+
+def scale_img_hwc(x: th.Tensor, size, mag="bilinear", min="area") -> th.Tensor:
+    return scale_img_nhwc(x[None, ...], size, mag, min)[0]
+
+
+def scale_img_nhwc(x: th.Tensor, size, mag="bilinear", min="area") -> th.Tensor:
+    assert (x.shape[1] >= size[0] and x.shape[2] >= size[1]) or (x.shape[1] < size[0] and x.shape[2] < size[1]), (
+        "Trying to magnify image in one dimension and minify in the other"
+    )
+    y = x.permute(0, 3, 1, 2)  # NHWC -> NCHW
+    if x.shape[1] > size[0] and x.shape[2] > size[1]:  # Minification, previous size was bigger
+        y = th.nn.functional.interpolate(y, size, mode=min)
+    else:  # Magnification
+        if mag in ("bilinear", "bicubic"):
+            y = th.nn.functional.interpolate(y, size, mode=mag, align_corners=True)
+        else:
+            y = th.nn.functional.interpolate(y, size, mode=mag)
+    return y.permute(0, 2, 3, 1).contiguous()  # NCHW -> NHWC
+
+
+def scale_img_chw(x: th.Tensor, size, mag="bilinear", min="area") -> th.Tensor:
+    return scale_img_nchw(x[None, ...], size, mag, min)[0]
+
+
+def scale_img_nchw(x: th.Tensor, size, mag="bilinear", min="area") -> th.Tensor:
+    if x.shape[1] > size[0] and x.shape[2] > size[1]:  # Minification, previous size was bigger
+        y = th.nn.functional.interpolate(x, size, mode=min)
+    else:  # Magnification
+        if mag in ("bilinear", "bicubic"):
+            y = th.nn.functional.interpolate(x, size, mode=mag, align_corners=True)
+        else:
+            y = th.nn.functional.interpolate(x, size, mode=mag)
+    return y

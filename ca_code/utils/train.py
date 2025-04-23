@@ -183,9 +183,9 @@ def train(
             loss_history.append(loss)
 
         if exploded:
-            # load_checkpoint(config.train.ckpt_dir, modules={"model": model, "optimizer": optimizer})
-            # loss_history.clear()
-            # loss_history.append(np.inf)
+            load_checkpoint(config.train.ckpt_dir, modules={"model": model, "optimizer": optimizer})
+            loss_history.clear()
+            loss_history.append(np.inf)
             continue
 
         optimizer.zero_grad()

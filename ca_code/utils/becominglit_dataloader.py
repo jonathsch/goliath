@@ -17,7 +17,7 @@ from torch.utils.data import Dataset
 from torch.utils.data.dataloader import default_collate
 from torchvision.transforms.functional import pil_to_tensor
 
-from ca_code.utils.image import srgb2linear
+from ca_code.utils.image import srgb2linear, scale_img_nchw
 
 # There are a lot of frame-wise assets. Avoid re-fetching those when we
 # switch cameras
@@ -123,7 +123,7 @@ class BecomingLitDataset(Dataset):
         frames = frames.intersection(vert_frames)
         if self.frames_subset:
             frames = frames.intersection(self.frames_subset)
-        
+
         if self.light_pattern_subset:
             light_pattern = self.load_light_pattern()
             light_pattern = {f[0]: f[1] for f in light_pattern}  # frame_id -> light_pattern_idx
@@ -173,16 +173,12 @@ class BecomingLitDataset(Dataset):
         return pil_to_tensor(Image.open(img_path))
 
     def load_alpha(self, frame_id: int, cam_id: str) -> Image.Image:
-        alpha_path = (
-            self.seq_folder
-            / "flame_tracking"
-            / "alpha_masks_birefnet"
-            / f"cam_{cam_id}"
-            / f"frame_{frame_id:06d}_union.jpg"
-        )
-        if not alpha_path.exists():
-            return None
-        return pil_to_tensor(Image.open(alpha_path))
+        alpha_path = self.seq_folder / "alpha_birefnet" / f"cam_{cam_id}" / f"frame_{frame_id:06d}.jpg"
+        return pil_to_tensor(Image.open(alpha_path)) if alpha_path.exists() else None
+
+    def load_seg_mask(self, frame_id: int, cam_id: str) -> Image.Image:
+        seg_path = self.seq_folder / "seg_masks" / f"cam_{cam_id}" / f"frame_{frame_id:06d}.png"
+        return pil_to_tensor(Image.open(seg_path)) if seg_path.exists() else None
 
     @lru_cache(maxsize=CACHE_LENGTH)
     def load_registration_vertices(self, frame: int) -> torch.Tensor:
@@ -247,20 +243,24 @@ class BecomingLitDataset(Dataset):
         return pose.astype(np.float32)
 
     def batch_filter(self, batch):
-        batch["image"] = batch["image"].float() / 255.0
-        batch["alpha"] = batch["alpha"].float() / 255.0
-        batch["background"] = batch["background"].float() / 255.0
+        batch["image"] = batch["image"].float()
+        batch["image"] = srgb2linear((batch["image"] / 255.0)).clamp(0, 1)
 
-        # Alpha segmentation
-        if batch["image"].size() != batch["alpha"].size():
-            batch["alpha"] = F.interpolate(
-                batch["alpha"][None], size=(batch["image"].shape[1], batch["image"].shape[2]), mode="bilinear"
-            )[0]
-        batch["image"] = batch["image"] * batch["alpha"]
+        if "background" in batch:
+            batch["background"] = batch["background"].float()
+            batch["background"] = srgb2linear((batch["background"] / 255.0)).clamp(0, 1)
 
-        # Convert to linear RGB space
-        batch["image"] = srgb2linear((batch["image"])).clamp(0, 1)
-        batch["background"] = srgb2linear((batch["background"])).clamp(0, 1)
+        if "alpha" in batch:
+            batch["alpha"] = batch["alpha"].float() / 255.0
+            batch["alpha"] = scale_img_nchw(batch["alpha"], batch["image"].shape[-2:])
+
+        if "segmentation" in batch:
+            is_cloth = batch["segmentation"] != 3
+            is_cloth = scale_img_nchw(is_cloth.float(), batch["image"].shape[-2:], min="nearest")
+
+        if "alpha" in batch and "segmentation" in batch:
+            mask = batch["alpha"] * is_cloth
+            batch["image"] = batch["image"] * mask
 
     @property
     def static_assets(self) -> Dict[str, Any]:
@@ -299,7 +299,11 @@ class BecomingLitDataset(Dataset):
         image = self.load_image(frame, camera)
         alpha = self.load_alpha(frame, camera)
         if alpha is None:
-            alpha = torch.ones_like(image) * 255.0
+            alpha = torch.ones_like(image, dtype=torch.float32) * 255.0
+        
+        segmentation = self.load_seg_mask(frame, camera)
+        if segmentation is None:
+            segmentation = torch.zeros_like(image, dtype=torch.uint8)
 
         head_pose = self.load_head_pose(frame)
         # kpts = self.load_3d_keypoints(frame)
@@ -352,6 +356,7 @@ class BecomingLitDataset(Dataset):
             "n_lights": n_lights,
             "color": color,
             "background": background,
+            "segmentation": segmentation,
             # "keypoints_3d": kpts,
             # "registration_vertices_mean": reg_verts_mean,
             # "registration_vertices_variance": reg_verts_var,

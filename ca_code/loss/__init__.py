@@ -565,8 +565,8 @@ def loss_bound_primscale(
     preds,
     batch=None,
     key: str = "primscale_preclip",
-    min_scale: float = 0.1 * 0.001,
-    max_scale: float = 20.0 * 0.001,
+    min_scale: float = 0.1,
+    max_scale: float = 20.0,
 ):
     primscale = preds[key]
     return th.where(
