@@ -131,41 +131,24 @@ def main(config: DictConfig):
     # # campos_path = th.stack([campos_path_x, campos_path_y, campos_path_z], dim=1) * 2.0 # [256, 3]
     # # campos_path = to_device(campos_path, device)
 
-    # # forward
-    N_STEPS = 512
-    completed_steps = 0
-    # while completed_steps < N_STEPS:
-    #     for i, batch in enumerate(tqdm(loader)):
-    #         batch = to_device(batch, device)
-    #         batch_filter_fn(batch)
-    #         with th.no_grad():
-    #             preds = model_p(**batch, index=[completed_steps])
-
-    #             # means = preds["primpos"][0]
-    #             # quats = preds["primqvec"][0]
-    #             # scales = preds["primscale"][0]
-    #             # opacities = preds["sigma"][0]
-    #             # nrm = preds["spec_nml"][0]
-    #             # rgb = preds["diff_color"][0]
-    #             # rgb = preds["color"][0]
-    #             # rgb = preds["albedo"][0]
-    #             # gs_mesh = get_mesh(means, quats, scales, opacities, nrm, rgb)
+    # forward
+    for i in range(256):
+        batch = next(iter(loader))
+        batch = to_device(batch, device)
+        batch_filter_fn(batch)
+        with th.no_grad():
+            preds = model_p(**batch, index=[180 + i])
 
     #         # if "hand" in model_dir:
     #         #     preds["rgb"] = preds["rgb"] / 255.0
 
-    #         # visualizing
-    #         rgb_preds_grid = make_grid(linear2srgb(preds["rgb"]), nrow=4)
-    #         save_image(rgb_preds_grid, f"{save_dir_point}/{completed_steps}.png")
+        # visualizing
+        rgb_preds_grid = make_grid(linear2srgb(preds["rgb"]), nrow=4)
+        save_image(rgb_preds_grid, f"{model_dir}/tmp/{i}.png")
 
-    #         completed_steps += 1
-
-    #         if completed_steps >= N_STEPS:
-    #             break
-
-    # os.system(
-    #     f"ffmpeg -y -framerate 24 -i '{save_dir_point}/%d.png' -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -crf 10 -g 10 -pix_fmt yuv420p {model_dir}/{config.data.sequence}_{MODALITY}_point.mp4 -y"
-    # )
+    os.system(
+        f"ffmpeg -y -framerate 24 -i '{model_dir}/tmp/%d.png' -b:v 8000000 -c:v mpeg4 -g 10 -pix_fmt yuv420p {model_dir}/_point.mp4 -y"
+    )
 
     # download 1k hdr from https://polyhaven.com/a/metro_noord
     model_e = EnvSpinDecorator(

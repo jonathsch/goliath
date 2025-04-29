@@ -163,6 +163,8 @@ def main(config: DictConfig):
     if not RUN_ENV_MAP:
         return
 
+    exit()
+
     model_e = EnvSpinDecorator(
         model,
         envmap_path="./envmaps/metro_noord_1k.hdr",
