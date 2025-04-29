@@ -29,9 +29,9 @@ logger = logging.getLogger(__name__)
 def main(config: DictConfig):
     device = th.device("cuda:0")
     
-    remote = os.getenv("REMOTE")
-    if remote:
-        config.train.run_dir = "/mnt" + config.train.run_dir
+    # remote = os.getenv("REMOTE")
+    # if remote:
+    #     config.train.run_dir = "/mnt" + config.train.run_dir
     
     model_dir = config.train.run_dir
     os.makedirs(f"{model_dir}/tmp", exist_ok=True)
@@ -48,6 +48,8 @@ def main(config: DictConfig):
 
     # dataset = BodyDataset(**config.data)
     data_config = config.data
+    data_config.sequence = data_config.sequences[0]
+    del data_config["sequences"]
 
     dataset = BecomingLitDataset(**data_config)
     batch_filter_fn = dataset.batch_filter
@@ -90,7 +92,8 @@ def main(config: DictConfig):
     model_p = SingleLightCycleDecorator(model, light_rotate_axis=1).to(device)
 
     # forward
-    for i, batch in enumerate(tqdm(loader)):
+    for i in range(256):
+        batch = next(iter(loader))
         batch = to_device(batch, device)
         batch_filter_fn(batch)
         with th.no_grad():
@@ -102,9 +105,6 @@ def main(config: DictConfig):
         # visualizing
         rgb_preds_grid = make_grid(linear2srgb(preds["rgb"]), nrow=4)
         save_image(rgb_preds_grid, f"{model_dir}/tmp/{i}.png")
-
-        if i > 256:
-            break
 
     os.system(
         f"ffmpeg -y -framerate 24 -i '{model_dir}/tmp/%d.png' -b:v 8000000 -c:v mpeg4 -g 10 -pix_fmt yuv420p {model_dir}/_point.mp4 -y"

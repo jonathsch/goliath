@@ -1,0 +1,133 @@
+sid: "1015"
+sequence: "ALL"
+root_dir: /cluster/valinor/jschmidt/becominglit
+
+data:
+  root_path: ${root_dir}
+  subject: ${sid}
+  sequences: ["HEADROT", "TALK", "WRINKLE_SOFT", "JAW_SOFT", "WRINKLE_HARD"]
+  fully_lit_only: false
+  downscale_factor: 4
+  cameras_subset:
+    - "222200042"
+    - "222200044"
+    - "222200046"
+    - "222200040"
+    - "222200036"
+    - "222200048"
+    - "220700191"
+    - "222200041"
+    - "222200038"
+    - "222200047"
+    - "222200043"
+    - "222200049"
+    - "222200039"
+    - "221501007"
+    - "222200045"
+
+dataloader:
+  batch_size: 4
+  num_workers: 8
+  prefetch_factor: 2
+  pin_memory: True
+  persistent_workers: True
+  shuffle: True
+
+model_name: rgca_512
+
+model:
+  class_name: ca_code.models.rgca_512.AutoEncoder
+
+  n_embs: 256
+  image_height: 802
+  image_width: 550
+
+  encoder:
+    noise_std: 1.0
+    mean_scale: 0.1
+    logvar_scale: 0.01
+
+  decoder:
+    n_color_sh: 3
+
+  learn_blur: false
+
+summary:
+  class_name: ca_code.models.rgca_512.RGCASummary
+
+loss:
+  class_name: ca_code.loss.ModularLoss
+  losses:
+    rgb_l1:
+      src_key: rgb
+      tgt_key: image
+      mask_key: image_weight
+      weight: 1e1
+    rgb_ssim:
+      src_key: rgb
+      tgt_key: image
+      mask_key: image_weight
+      weight: 2e-1
+    # geom_l2: 0.4 # in paper, it was 10 because it's normalized by variance
+    l2_reg:
+      key: spec_dnml
+      schedule:
+        class_name: ca_code.loss.MonotonicWeightSchedule
+        start: 0
+        end: 10000
+        init_value: 1.0
+        target_value: 0.0
+    backlit_reg:
+      schedule:
+        class_name: ca_code.loss.StepWeightSchedule
+        start: 150000
+        end: 200000
+        value: 1.0
+    bound_primscale: 1e-2
+    negcolor: 1e-2
+    # learn_blur: 0.001
+    kl: 0.002
+
+lr: 5.0e-4
+optimizer:
+  class_name: torch.optim.Adam
+  per_module:
+    encoder:
+      lr: ${lr}
+    geomdecoder:
+      lr: ${lr}
+    decoder:
+      lr: ${lr}
+    # cal:
+    #   lr: ${lr}
+    # learn_blur:
+    #   lr: 0.001
+
+train:
+  run_id: "debug" # NOTE: Override this from the cmd line with a unique id
+  tag: ${model_name}.${sid}
+  run_dir: /cluster/valinor/jschmidt/logs/goliath/${.tag}/${.run_id}
+  tb_dir: ${.run_dir}/tb
+  ckpt_dir: ${.run_dir}/checkpoints
+
+  # CHANGE ME
+  n_max_iters: 200000
+  log_every_n_steps: 100
+  summary_every_n_steps: 10_000
+  ckpt_every_n_steps: 50000
+
+test:
+  ckpt:
+    ckpt_path: ${.run_dir}/checkpoints/latest.pt
+    strict: True
+    map_location: cuda:0
+  vis_path: ${.run_dir}/viz
+  log_every_n_steps: 1
+  data:
+    root_path: ${data.root_path}
+    subject: ${sid}
+    sequence: "JAW_HARD"
+    fully_lit_only: False
+    cameras_subset:
+      - "222200037"
+    # light_pattern_subset: [1, 5, 10, 11, 16, 20, 21, 25, 30, 31, 36, 40]

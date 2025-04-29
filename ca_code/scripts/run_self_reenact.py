@@ -131,6 +131,8 @@ def main(config: DictConfig):
         f"ffmpeg -y -framerate 24 -i '{model_dir}/tmp/%d.png' -b:v 8000000 -c:v mpeg4 -g 10 -pix_fmt yuv420p {model_dir}/_self_reenact_{config.self_reenact.tgt_seq}.mp4 -y"
     )
 
+    exit()
+
     model_e = EnvSpinDecorator(
         model,
         envmap_path="./envmaps/metro_noord_1k.hdr",

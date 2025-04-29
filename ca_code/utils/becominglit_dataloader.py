@@ -300,7 +300,7 @@ class BecomingLitDataset(Dataset):
         alpha = self.load_alpha(frame, camera)
         if alpha is None:
             alpha = torch.ones_like(image, dtype=torch.float32) * 255.0
-        
+
         segmentation = self.load_seg_mask(frame, camera)
         if segmentation is None:
             segmentation = torch.zeros_like(image, dtype=torch.uint8)
