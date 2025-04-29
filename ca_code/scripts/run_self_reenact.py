@@ -33,6 +33,13 @@ logging.basicConfig(level=logging.INFO)
 
 logger = logging.getLogger(__name__)
 
+# Settings
+TGT_SEQUENCE = "JAW_HARD"
+CAM = "222200037"
+MODALITIES = ["rgb", "albedo", "diffuse", "specular", "normal", "gt"]
+SAVE_IMAGES = True
+RUN_ENV_MAP = False
+
 
 def main(config: DictConfig):
     device = th.device("cuda:0")
@@ -42,9 +49,12 @@ def main(config: DictConfig):
         config.train.run_dir = "/mnt" + config.train.run_dir
 
     model_dir = config.train.run_dir
-    os.makedirs(f"{model_dir}/tmp", exist_ok=True)
+    save_dir = f"{model_dir}/sra_{TGT_SEQUENCE}_{CAM}"
+    os.makedirs(save_dir, exist_ok=True)
+    for mod in MODALITIES:
+        os.makedirs(f"{save_dir}/{mod}", exist_ok=True)
 
-    ckpt_path = f"{model_dir}/checkpoints/600000.pt"
+    ckpt_path = f"{model_dir}/checkpoints/latest.pt"
     if not os.path.exists(ckpt_path):
         ckpt_path = f"{model_dir}/checkpoints/latest.pt"
 
@@ -52,7 +62,9 @@ def main(config: DictConfig):
     config.data.root_path = os.getenv("BECOMINGLIT_DATASET_PATH")
     config.data.fully_lit_only = False
     config.data.partially_lit_only = False
-    config.data.sequence = config.self_reenact.tgt_seq
+    # config.data.light_pattern_subset = config.test.data.light_pattern_subset
+    del config.data.sequences
+    config.data.sequence = TGT_SEQUENCE
 
     dataset = BecomingLitDataset(**config.data)
     # batch_filter_fn = dataset.batch_filter
@@ -80,7 +92,7 @@ def main(config: DictConfig):
     model.learn_blur_enabled = False
     model.cal_enabled = False
 
-    config.data.cameras_subset = ["222200037"]
+    config.data.cameras_subset  = ["222200037"]
     dataset = BecomingLitDataset(**config.data)
     batch_filter_fn = dataset.batch_filter
 
@@ -94,7 +106,7 @@ def main(config: DictConfig):
         **config.dataloader,
     )
 
-    logger.info(f"Target sequence {config.self_reenact.tgt_seq}")
+    logger.info(f"Target sequence {TGT_SEQUENCE}")
     logger.info(f"Setting dataset to {config.data.sequence}")
 
     # Set up metrics
@@ -104,32 +116,52 @@ def main(config: DictConfig):
 
     # forward
     img_idx = 0
-    for i, batch in enumerate(tqdm(loader)):
+    for i, batch in enumerate(tqdm(loader, total=len(loader))):
         batch = to_device(batch, device)
         batch_filter_fn(batch)
         with th.no_grad():
-            preds = model(**batch)
+            preds = model(**batch, render_aux=True)
 
         # visualizing
         pred_rgb = linear2srgb(preds["rgb"]).clamp(0.0, 1.0)
         gt_rgb = linear2srgb(batch["image"]).clamp(0.0, 1.0)
 
+        # auxilary renderings
+        # pred_diffuse = linear2srgb(preds["render_diffuse"]).clamp(0.0, 1.0)
+        # pred_specular = linear2srgb(preds["render_specular"]).clamp(0.0, 1.0)
+        # pred_normal = preds["render_spec_nml"].clamp(-1.0, 1.0) * 0.5 + 0.5
+        # pred_albedo = preds["render_albedo"].clamp(0.0, 1.0)
+
         psnr.update(pred_rgb, gt_rgb)
         ssim.update(pred_rgb, gt_rgb)
         lpips.update(pred_rgb, gt_rgb)
 
-        if batch["is_fully_lit_frame"].item():
-            rgb_preds_grid = make_grid(th.cat([gt_rgb, pred_rgb]), nrow=4)
-            save_image(rgb_preds_grid, f"{model_dir}/tmp/{img_idx}.png")
-            img_idx += 1
+        if SAVE_IMAGES:
+            save_image(pred_rgb, f"{save_dir}/rgb/{img_idx}.png")
+            # save_image(pred_diffuse, f"{save_dir}/diffuse/{img_idx}.png")
+            # save_image(pred_specular, f"{save_dir}/specular/{img_idx}.png")
+            # save_image(pred_normal, f"{save_dir}/normal/{img_idx}.png")
+            # save_image(pred_albedo, f"{save_dir}/albedo/{img_idx}.png")
+            save_image(gt_rgb, f"{save_dir}/gt/{img_idx}.png")
+
+        img_idx += 1
+
+        if i > 512:
+            break
 
     logger.info(f"PSNR: {psnr.compute().item()}, SSIM: {ssim.compute().item()}, LPIPS: {lpips.compute().item()}")
-    with open(f"{model_dir}/metrics_self_reenact_{config.self_reenact.tgt_seq}.json", "w") as f:
+    with open(f"{save_dir}/metrics.json", "w") as f:
         json.dump({"psnr": psnr.compute().item(), "ssim": ssim.compute().item(), "lpips": lpips.compute().item()}, f)
 
-    os.system(
-        f"ffmpeg -y -framerate 24 -i '{model_dir}/tmp/%d.png' -b:v 8000000 -c:v mpeg4 -g 10 -pix_fmt yuv420p {model_dir}/_self_reenact_{config.self_reenact.tgt_seq}.mp4 -y"
-    )
+    if SAVE_IMAGES:
+        # for mod in MODALITIES:
+        #     os.system(
+        #         f"ffmpeg -y -framerate 24 -i '{save_dir}/{mod}/%d.png' -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -crf 10 -c:v libx264 -g 10 -pix_fmt yuv420p {save_dir}/{mod}.mp4 -y"
+        #     )
+        pass
+
+    if not RUN_ENV_MAP:
+        return
 
     model_e = EnvSpinDecorator(
         model,
