@@ -66,6 +66,12 @@ class BecomingLitDataset(Dataset):
     def subject_folder(self) -> Path:
         return self.root_path / self.subject
 
+    @property
+    def flame_shape_code(self) -> torch.Tensor:
+        flame_path = self.seq_folder / "flame_tracking" / "flame_params.npz"
+        flame_params = np.load(flame_path)
+        return torch.as_tensor(flame_params["shape"], dtype=torch.float32)
+
     @lru_cache(maxsize=NUM_SEQUENCES)
     def get_camera_calibration(self) -> Dict[str, Tuple[torch.Tensor, torch.Tensor]]:
         with open(self.subject_folder / "camera_calibration.json") as f:
@@ -178,7 +184,7 @@ class BecomingLitDataset(Dataset):
 
     def load_seg_mask(self, frame_id: int, cam_id: str) -> Image.Image:
         seg_path = self.seq_folder / "seg_masks" / f"cam_{cam_id}" / f"frame_{frame_id:06d}.png"
-        return pil_to_tensor(Image.open(seg_path)) if seg_path.exists() else None
+        return pil_to_tensor(Image.open(seg_path))
 
     @lru_cache(maxsize=CACHE_LENGTH)
     def load_registration_vertices(self, frame: int) -> torch.Tensor:
@@ -186,6 +192,12 @@ class BecomingLitDataset(Dataset):
         with open(ply_path, "rb") as f:
             verts, _ = load_ply(f)
         return verts
+
+    @lru_cache(maxsize=NUM_SEQUENCES)
+    def load_flame_params(self) -> torch.Tensor:
+        flame_path = self.seq_folder / "flame_tracking" / "flame_params.npz"
+        flame_params = np.load(flame_path)
+        return {k: torch.from_numpy(v) for k, v in flame_params.items() if k in ("expr", "jaw_pose", "eyes_pose")}
 
     @lru_cache(maxsize=NUM_SEQUENCES)
     def load_registration_vertices_mean(self) -> np.ndarray:
@@ -260,7 +272,7 @@ class BecomingLitDataset(Dataset):
 
         if "alpha" in batch and "segmentation" in batch:
             mask = batch["alpha"] * is_cloth
-            batch["image"] = batch["image"] * mask
+            # batch["image"] = batch["image"] * mask
 
     @property
     def static_assets(self) -> Dict[str, Any]:
@@ -303,7 +315,8 @@ class BecomingLitDataset(Dataset):
 
         segmentation = self.load_seg_mask(frame, camera)
         if segmentation is None:
-            segmentation = torch.zeros_like(image, dtype=torch.uint8)
+            logger.warning(f"Segmentation mask not found for frame {frame} and camera {camera}.")
+            segmentation = torch.zeros(1, 3208, 2200, self.img_width, 1, dtype=torch.uint8)
 
         head_pose = self.load_head_pose(frame)
         # kpts = self.load_3d_keypoints(frame)
@@ -311,6 +324,9 @@ class BecomingLitDataset(Dataset):
         # reg_verts_mean = self.load_registration_vertices_mean()
         # reg_verts_var = self.load_registration_vertices_variance()
         # template_mesh = self.load_template_mesh()
+
+        flame_params = self.load_flame_params()
+        flame_batch = {k: v[frame] for k, v in flame_params.items()}
 
         # TODO: precompute some of them
         light_pattern = self.load_light_pattern()
@@ -357,6 +373,7 @@ class BecomingLitDataset(Dataset):
             "color": color,
             "background": background,
             "segmentation": segmentation,
+            "flame_params": flame_batch,
             # "keypoints_3d": kpts,
             # "registration_vertices_mean": reg_verts_mean,
             # "registration_vertices_variance": reg_verts_var,

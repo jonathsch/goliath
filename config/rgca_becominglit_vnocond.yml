@@ -7,6 +7,21 @@ data:
   subject: ${sid}
   sequences: ["HEADROT", "TALK", "WRINKLE_SOFT", "JAW_SOFT"]
   fully_lit_only: False
+  cameras_subset:
+  - "222200042"
+  - "222200044"
+  - "222200046"
+  - "222200040"
+  - "222200036"
+  - "222200048"
+  - "220700191"
+  - "222200041"
+  - "222200038"
+  - "222200047"
+  - "222200043"
+  - "222200049"
+  - "222200039"
+  - "221501007"
 
 dataloader:
   batch_size: 8
@@ -34,7 +49,7 @@ model:
     n_color_sh: 3
 
   cal:
-    identity_camera: 222200037
+    identity_camera: 222200036
 
   learn_blur: true
 
@@ -117,3 +132,4 @@ test:
     fully_lit_only: False
     cameras_subset:
       - "222200037"
+      - "222200045"

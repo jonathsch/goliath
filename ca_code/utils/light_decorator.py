@@ -104,16 +104,20 @@ class EnvSpinDecorator(th.nn.Module):
         norm_scale = []
         for i in range(batch_size):
             index = data["index"][i]
-            rot_y = 2.0 * np.pi * index / self.cycle
+            rot_y = 2.0 * np.pi * -index / self.cycle - (np.pi / 2.0)
             axis = th.Tensor([0.0, 1.0, 0.0])
             quat = th.Tensor(axis.tolist() + [rot_y]).float()
             quat = thf.normalize(quat[0:3], dim=0) * quat[3]
             rot_mat = envmap.rvec_to_R(quat)
+
+            rotmat_z_180 = th.tensor([[1, 0, 0], [0, 1, 0], [0, 0, -1]], device=rot_mat.device, dtype=th.float32)
             new_env = envmap.rotate_envmap_mat(self.image, rot_mat)
 
             lightrots[i] = rot_mat
             perc90 = np.percentile(self.image.data.cpu().numpy(), 90)
-            envbg.append(new_env / (perc90 if perc90 > 0 else new_env.max().item()) * 255)
+            envbg.append(
+                envmap.rotate_envmap_mat(new_env, rotmat_z_180) / (perc90 if perc90 > 0 else new_env.max().item()) * 255
+            )
 
             new_env = thf.interpolate(new_env[None], (16, 32), mode="bilinear", antialias=True)[0]
 
@@ -144,7 +148,9 @@ class EnvSpinDecorator(th.nn.Module):
         data["n_lights"] = light_intensity.shape[1] * th.ones(batch_size, 1).to(device)
         data["is_fullylit_frame"] = th.zeros(1).to(device)
 
-        return self.mod(**data)
+        preds = self.mod(**data)
+        preds["envbg"] = envbg
+        return preds
 
 
 class SingleLightCycleDecorator(th.nn.Module):

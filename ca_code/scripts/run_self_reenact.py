@@ -34,19 +34,23 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Settings
-TGT_SEQUENCE = "JAW_HARD"
+TGT_SEQUENCE = "FREE"
 CAM = "222200037"
 MODALITIES = ["rgb", "albedo", "diffuse", "specular", "normal", "gt"]
 SAVE_IMAGES = True
 RUN_ENV_MAP = False
+LIGHT_SUBSET = [3, 15, 28, 36]
+# LIGHT_SUBSET = None
+# FRAME_SUBSET = list(range(500, 2047))
+FRAME_SUBSET = None
 
 
 def main(config: DictConfig):
     device = th.device("cuda:0")
     remote = os.getenv("REMOTE")
 
-    if remote:
-        config.train.run_dir = "/mnt" + config.train.run_dir
+    # if remote:
+    #     config.train.run_dir = "/mnt" + config.train.run_dir
 
     model_dir = config.train.run_dir
     save_dir = f"{model_dir}/sra_{TGT_SEQUENCE}_{CAM}"
@@ -54,7 +58,7 @@ def main(config: DictConfig):
     for mod in MODALITIES:
         os.makedirs(f"{save_dir}/{mod}", exist_ok=True)
 
-    ckpt_path = f"{model_dir}/checkpoints/latest.pt"
+    ckpt_path = f"{model_dir}/checkpoints/model.pt"
     if not os.path.exists(ckpt_path):
         ckpt_path = f"{model_dir}/checkpoints/latest.pt"
 
@@ -66,7 +70,7 @@ def main(config: DictConfig):
     del config.data.sequences
     config.data.sequence = TGT_SEQUENCE
 
-    dataset = BecomingLitDataset(**config.data)
+    dataset = BecomingLitDataset(**config.data, frames_subset=FRAME_SUBSET)
     # batch_filter_fn = dataset.batch_filter
 
     static_assets = AttrDict(dataset.static_assets)
@@ -93,7 +97,8 @@ def main(config: DictConfig):
     model.cal_enabled = False
 
     config.data.cameras_subset  = ["222200037"]
-    dataset = BecomingLitDataset(**config.data)
+    config.data.light_pattern_subset = LIGHT_SUBSET
+    dataset = BecomingLitDataset(**config.data, frames_subset=FRAME_SUBSET)
     batch_filter_fn = dataset.batch_filter
 
     config.dataloader.shuffle = False
@@ -136,18 +141,19 @@ def main(config: DictConfig):
         ssim.update(pred_rgb, gt_rgb)
         lpips.update(pred_rgb, gt_rgb)
 
-        if SAVE_IMAGES:
-            save_image(pred_rgb, f"{save_dir}/rgb/{img_idx}.png")
+        frame_id = batch["frame_id"][0].item()
+        if SAVE_IMAGES and i < 512:
+            save_image(pred_rgb, f"{save_dir}/rgb/{frame_id}.png")
             # save_image(pred_diffuse, f"{save_dir}/diffuse/{img_idx}.png")
             # save_image(pred_specular, f"{save_dir}/specular/{img_idx}.png")
             # save_image(pred_normal, f"{save_dir}/normal/{img_idx}.png")
             # save_image(pred_albedo, f"{save_dir}/albedo/{img_idx}.png")
-            save_image(gt_rgb, f"{save_dir}/gt/{img_idx}.png")
+            # save_image(gt_rgb, f"{save_dir}/gt/{img_idx}.png")
 
         img_idx += 1
 
-        if i > 512:
-            break
+        # if i > 512:
+        #     break
 
     logger.info(f"PSNR: {psnr.compute().item()}, SSIM: {ssim.compute().item()}, LPIPS: {lpips.compute().item()}")
     with open(f"{save_dir}/metrics.json", "w") as f:

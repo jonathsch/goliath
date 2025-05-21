@@ -89,7 +89,7 @@ if __name__ == "__main__":
     console_commands: List[str] = sys.argv[2:]
 
     dotenv.load_dotenv()
-    cluster_path_prefix = os.getenv("CLUSTER_PATH_PREFIX", "")
+    cluster_path_prefix = ""
 
     config = OmegaConf.load(config_path)
 

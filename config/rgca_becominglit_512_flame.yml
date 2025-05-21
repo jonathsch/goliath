@@ -5,9 +5,10 @@ root_dir: /cluster/valinor/jschmidt/becominglit
 data:
   root_path: ${root_dir}
   subject: ${sid}
-  sequences: ["EXP-1", "EXP-2", "EMOTIONS", "SEN-01", "SEN-02", "SEN-03"]
+  # sequences: ["HEADROT", "TALK", "WRINKLE_SOFT", "JAW_SOFT", "WRINKLE_HARD"]
+  sequences: ["EXP-2", "EMOTIONS", "SEN-01", "SEN-02", "SEN-03"]
   fully_lit_only: false
-  downscale_factor: 4
+  downscale_factor: 2
   cameras_subset:
     - "222200042"
     - "222200044"
@@ -33,14 +34,14 @@ dataloader:
   persistent_workers: True
   shuffle: True
 
-model_name: rgca_fix_geom
+model_name: rgca_512_flame
 
 model:
-  class_name: ca_code.models.rgca.AutoEncoder
+  class_name: ca_code.models.rgca_512_flame.AutoEncoder
 
   n_embs: 256
-  image_height: 802
-  image_width: 550
+  image_height: 1604
+  image_width: 1100
 
   encoder:
     noise_std: 1.0
@@ -53,7 +54,7 @@ model:
   learn_blur: false
 
 summary:
-  class_name: ca_code.models.rgca.RGCASummary
+  class_name: ca_code.models.rgca_512_flame.RGCASummary
 
 loss:
   class_name: ca_code.loss.ModularLoss

@@ -342,4 +342,4 @@ def compose_envmap(render, alpha, envbg, K, Rt):
     render = render + (1.0 - alpha) * envbg.clamp(0, 1.0)
     render = (1.0 - mirror_alpha) * render + mirror_alpha * mirror_img
     
-    return render
+    return render, envbg

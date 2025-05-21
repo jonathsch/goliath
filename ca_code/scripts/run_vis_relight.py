@@ -28,7 +28,7 @@ from ca_code.utils.image import linear2srgb
 from ca_code.utils.light_decorator import EnvSpinDecorator, SingleLightCycleDecorator
 from ca_code.utils.module_loader import load_from_config
 from ca_code.utils.train import load_checkpoint, to_device
-from ca_code.utils.gs_to_mesh import get_mesh
+# from ca_code.utils.gs_to_mesh import get_mesh
 
 logger = logging.getLogger(__name__)
 
@@ -38,15 +38,15 @@ MODALITY = "full"
 def main(config: DictConfig):
     device = th.device("cuda:0")
 
-    remote = os.getenv("REMOTE")
-    if remote:
-        config.train.run_dir = "/mnt" + config.train.run_dir
+    # remote = os.getenv("REMOTE")
+    # if remote:
+    #     config.train.run_dir = "/mnt" + config.train.run_dir
 
     model_dir = config.train.run_dir
     os.makedirs(f"{model_dir}/tmp", exist_ok=True)
 
     # ckpt_path = f"{model_dir}/checkpoints/model.pt"
-    ckpt_path = f"{model_dir}/checkpoints/600000.pt"
+    ckpt_path = f"{model_dir}/checkpoints/model.pt"
     if not os.path.exists(ckpt_path):
         ckpt_path = f"{model_dir}/checkpoints/latest.pt"
         # ckpt_path = f"{model_dir}/checkpoints/600000.pt"
@@ -57,7 +57,7 @@ def main(config: DictConfig):
 
     if "sequences" in config.data:
         del config.data["sequences"]
-        config.data.sequence = "TALK"
+        config.data.sequence = "FREE"
     # dataset = BodyDataset(**config.data)
     data_config = config.data
 
@@ -73,7 +73,7 @@ def main(config: DictConfig):
     # config.data.split = "test"
     config.data.fully_lit_only = True
     config.data.partially_lit_only = False
-    # config.data.cameras_subset = ["222200037"]
+    config.data.cameras_subset = ["222200037"]
     # dataset = BodyDataset(**config.data)
     dataset = BecomingLitDataset(**data_config)
     batch_filter_fn = dataset.batch_filter
@@ -85,7 +85,7 @@ def main(config: DictConfig):
     config.dataloader.num_workers = 4
 
     # dataset.cameras = ["401892"]
-    dataset.cameras = ["222200037"]
+    # dataset.cameras = ["222200037"]
 
     static_assets = AttrDict(dataset.static_assets)
 
@@ -123,7 +123,7 @@ def main(config: DictConfig):
     model.cal_enabled = False
 
     light_positions = np.load(Path.home().joinpath("light_pos.npy"))
-    model_p = SingleLightCycleDecorator(model, light_positions).to(device)
+    # model_p = SingleLightCycleDecorator(model, light_positions).to(device)
 
     # # campos_path_x = th.sin(th.linspace(0, 2 * th.pi, 256))
     # # campos_path_y = th.zeros_like(campos_path_x)
@@ -132,32 +132,32 @@ def main(config: DictConfig):
     # # campos_path = to_device(campos_path, device)
 
     # forward
-    for i in range(256):
-        batch = next(iter(loader))
-        batch = to_device(batch, device)
-        batch_filter_fn(batch)
-        with th.no_grad():
-            preds = model_p(**batch, index=[180 + i])
+    # for i in range(256):
+    #     batch = next(iter(loader))
+    #     batch = to_device(batch, device)
+    #     batch_filter_fn(batch)
+    #     with th.no_grad():
+    #         preds = model_p(**batch, index=[180 + i])
 
-    #         # if "hand" in model_dir:
-    #         #     preds["rgb"] = preds["rgb"] / 255.0
+    # #         # if "hand" in model_dir:
+    # #         #     preds["rgb"] = preds["rgb"] / 255.0
 
-        # visualizing
-        rgb_preds_grid = make_grid(linear2srgb(preds["rgb"]), nrow=4)
-        save_image(rgb_preds_grid, f"{model_dir}/tmp/{i}.png")
+    #     # visualizing
+    #     rgb_preds_grid = make_grid(linear2srgb(preds["rgb"]), nrow=4)
+    #     save_image(rgb_preds_grid, f"{model_dir}/tmp/{i}.png")
 
-    os.system(
-        f"ffmpeg -y -framerate 24 -i '{model_dir}/tmp/%d.png' -b:v 8000000 -c:v mpeg4 -g 10 -pix_fmt yuv420p {model_dir}/_point.mp4 -y"
-    )
+    # os.system(
+    #     f"ffmpeg -y -framerate 24 -i '{model_dir}/tmp/%d.png' -b:v 8000000 -c:v mpeg4 -g 10 -pix_fmt yuv420p {model_dir}/_point.mp4 -y"
+    # )
 
     # download 1k hdr from https://polyhaven.com/a/metro_noord
     model_e = EnvSpinDecorator(
         model,
         # envmap_path="./envmaps/metro_noord_1k.hdr",
-        envmap_path="/home/jschmidt/projects/becominglit/assets/envmaps/shanghai_bund_1k.hdr",
+        envmap_path="/rhome/jschmidt/projects/becominglit/assets/envmaps/shanghai_bund_1k.hdr",
         ydown=False,
         env_scale=8.0,
-        cycle=360,
+        cycle=256,
     ).to(device)
 
     # forward
@@ -169,15 +169,17 @@ def main(config: DictConfig):
 
         # visualizing
         # rgb_preds_grid = make_grid(linear2srgb(preds["rgb"]), nrow=4)
-        rgb_preds_grid = linear2srgb(preds["rgb"][0])
-        save_image(rgb_preds_grid, f"{save_dir_env}/{i}.png")
+        rgb_preds_grid = linear2srgb(preds["rgb"]["full"])
+        envbg = linear2srgb(preds["rgb"]["envbg"])
+        # save_image(rgb_preds_grid, f"{save_dir_env}/{i}.png")
+        save_image(envbg, f"{save_dir_env}/envbg_{i}.png")
 
-        if i > 360:
-            break
+        # if i > 360:
+        #     break
 
-    os.system(
-        f"ffmpeg -y -framerate 24 -i '{save_dir_env}/%d.png' -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -crf 20 -c:v libx264 -g 10 -pix_fmt yuv420p {model_dir}/{config.data.sequence}_env.mp4 -y"
-    )
+    # os.system(
+    #     f"ffmpeg -y -framerate 24 -i '{save_dir_env}/%d.png' -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -crf 20 -c:v libx264 -g 10 -pix_fmt yuv420p {model_dir}/{config.data.sequence}_env.mp4 -y"
+    # )
 
 
 if __name__ == "__main__":

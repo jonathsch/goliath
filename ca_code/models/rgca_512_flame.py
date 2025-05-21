@@ -63,7 +63,7 @@ class AutoEncoder(nn.Module):
 
         self.encoder = Encoder(
             n_embs=n_embs,
-            n_verts_in=assets.topology.v.shape[0],
+            n_expr_in=100,
             **encoder,
         )
 
@@ -142,6 +142,7 @@ class AutoEncoder(nn.Module):
         head_pose: th.Tensor,
         campos: th.Tensor,
         registration_vertices: th.Tensor,
+        flame_params: th.Tensor,
         color: th.Tensor,
         light_intensity: th.Tensor,
         light_pos: th.Tensor,
@@ -164,7 +165,7 @@ class AutoEncoder(nn.Module):
             head_pose_4x4 = th.cat([head_pose, th.zeros_like(head_pose[:, :1, :])], dim=1)
             head_pose_4x4[:, 3, 3] = 1.0
             head_pose = head_pose_4x4
-        
+
         # convert everything into head relative coordinates
         headrel_Rt = Rt @ head_pose
         headrel_campos = ((campos - head_pose[:, :3, 3])[:, None] @ head_pose[:, :3, :3])[:, 0]
@@ -174,8 +175,10 @@ class AutoEncoder(nn.Module):
         headrel_light_sh = (sh_coeffs[:, :, None] * light_intensity[..., None]).sum(dim=1)
         if lightrot is not None:
             lightrot = lightrot @ head_pose[:, :3, :3]
+        
         # encoding
-        enc_preds = self.encoder(registration_vertices, color)
+        flame_feat = th.cat([flame_params["expr"], flame_params["jaw_pose"], flame_params["eyes_pose"]], dim=-1) # [B, 109]
+        enc_preds = self.encoder(flame_feat)
         embs = enc_preds["embs"]
 
         # decoding
@@ -220,7 +223,7 @@ class AutoEncoder(nn.Module):
                 rgb = rgb + (1.0 - alpha) * bg
 
         if preconv_envmap is not None and "envbg" in kwargs:
-            rgb, envbg = compose_envmap(rgb, alpha, kwargs["envbg"], K, Rt)
+            rgb = compose_envmap(rgb, alpha, kwargs["envbg"], K, Rt)
 
             rgbs = [rgb]
 
@@ -236,7 +239,6 @@ class AutoEncoder(nn.Module):
                 "full": rgbs[0],
                 "diff": rgbs[1],
                 "spec": rgbs[2],
-                "envbg": envbg,
             }
 
         preds.update(rgb=rgb, alpha=alpha, depth=depth)
@@ -254,7 +256,7 @@ class Encoder(nn.Module):
     def __init__(
         self,
         n_embs: int,
-        n_verts_in: int,
+        n_expr_in: int,
         noise_std: float = 1.0,
         mean_scale: float = 0.1,
         logvar_scale: float = 0.01,
@@ -267,29 +269,32 @@ class Encoder(nn.Module):
         self.mean_scale = mean_scale
         self.logvar_scale = logvar_scale
 
-        self.n_verts_in = n_verts_in
+        self.n_expr_in = n_expr_in
 
-        self.geommod = th.nn.Sequential(la.LinearWN(self.n_verts_in * 3, 256), th.nn.LeakyReLU(0.2, inplace=True))
+        # self.geommod = th.nn.Sequential(la.LinearWN(self.n_verts_in * 3, 256), th.nn.LeakyReLU(0.2, inplace=True))
 
-        self.texmod = th.nn.Sequential(
-            la.Conv2dWNUB(3, 32, 512, 512, 4, 2, 1),
-            th.nn.LeakyReLU(0.2, inplace=True),
-            la.Conv2dWNUB(32, 32, 256, 256, 4, 2, 1),
-            th.nn.LeakyReLU(0.2, inplace=True),
-            la.Conv2dWNUB(32, 64, 128, 128, 4, 2, 1),
-            th.nn.LeakyReLU(0.2, inplace=True),
-            la.Conv2dWNUB(64, 64, 64, 64, 4, 2, 1),
-            th.nn.LeakyReLU(0.2, inplace=True),
-            la.Conv2dWNUB(64, 128, 32, 32, 4, 2, 1),
-            th.nn.LeakyReLU(0.2, inplace=True),
-            la.Conv2dWNUB(128, 128, 16, 16, 4, 2, 1),
-            th.nn.LeakyReLU(0.2, inplace=True),
-            la.Conv2dWNUB(128, 256, 8, 8, 4, 2, 1),
-            th.nn.LeakyReLU(0.2, inplace=True),
-            la.Conv2dWNUB(256, 256, 4, 4, 4, 2, 1),
-            th.nn.LeakyReLU(0.2, inplace=True),
-        )
-        self.jointmod = th.nn.Sequential(la.LinearWN(256 + 256 * 4 * 4, 512), th.nn.LeakyReLU(0.2, inplace=True))
+        # self.texmod = th.nn.Sequential(
+        #     la.Conv2dWNUB(3, 32, 512, 512, 4, 2, 1),
+        #     th.nn.LeakyReLU(0.2, inplace=True),
+        #     la.Conv2dWNUB(32, 32, 256, 256, 4, 2, 1),
+        #     th.nn.LeakyReLU(0.2, inplace=True),
+        #     la.Conv2dWNUB(32, 64, 128, 128, 4, 2, 1),
+        #     th.nn.LeakyReLU(0.2, inplace=True),
+        #     la.Conv2dWNUB(64, 64, 64, 64, 4, 2, 1),
+        #     th.nn.LeakyReLU(0.2, inplace=True),
+        #     la.Conv2dWNUB(64, 128, 32, 32, 4, 2, 1),
+        #     th.nn.LeakyReLU(0.2, inplace=True),
+        #     la.Conv2dWNUB(128, 128, 16, 16, 4, 2, 1),
+        #     th.nn.LeakyReLU(0.2, inplace=True),
+        #     la.Conv2dWNUB(128, 256, 8, 8, 4, 2, 1),
+        #     th.nn.LeakyReLU(0.2, inplace=True),
+        #     la.Conv2dWNUB(256, 256, 4, 4, 4, 2, 1),
+        #     th.nn.LeakyReLU(0.2, inplace=True),
+        # )
+        # self.jointmod = th.nn.Sequential(la.LinearWN(256 + 256 * 4 * 4, 512), th.nn.LeakyReLU(0.2, inplace=True))
+
+        flame_expr_ch = n_expr_in + 3 + 6  # expression + jaw_pose + eye_pose
+        self.flamemod = th.nn.Sequential(la.LinearWN(flame_expr_ch, 512), th.nn.LeakyReLU(0.2, inplace=True))
 
         self.mean: th.nn.Module = la.LinearWN(512, self.n_embs)
         self.logvar: th.nn.Module = la.LinearWN(512, self.n_embs)
@@ -298,12 +303,13 @@ class Encoder(nn.Module):
         la.glorot(self.mean, 1.0)
         la.glorot(self.logvar, 1.0)
 
-    def forward(self, geom: th.Tensor, color: th.Tensor) -> Dict[str, th.Tensor]:
+    def forward(self, flame_features: th.Tensor) -> Dict[str, th.Tensor]:
         preds = {}
 
-        geomout = self.geommod(geom.view(geom.shape[0], -1))
-        texout = self.texmod(color / 255.0 - 0.5).view(-1, 256 * 4 * 4)
-        encout = self.jointmod(th.cat([geomout, texout], dim=1))
+        # geomout = self.geommod(geom.view(geom.shape[0], -1))
+        # texout = self.texmod(color / 255.0 - 0.5).view(-1, 256 * 4 * 4)
+        # encout = self.jointmod(th.cat([geomout, texout], dim=1))
+        encout = self.flamemod(flame_features)
         embs_mu = self.mean(encout) * self.mean_scale
         embs_logvar = self.logvar(encout) * self.logvar_scale
 
@@ -503,6 +509,8 @@ class PrimDecoder(nn.Module):
 
         if preconv_envmap is not None:
             # rotate ref vector not envmap itself
+            # rotmat_y_180 = th.tensor([[1, 0, 0], [0, -1, 0], [0, 0, 1]], device=headrel_light_pos.device, dtype=th.float32).unsqueeze(0)
+            # lightrot = rotmat_y_180 @ lightrot
             ref_dirs = th.einsum("bxy,bny->bnx", lightrot, ref_dirs)
             ref_uv = dir2uv(ref_dirs, 2)
             miplevel = sigma * 5

@@ -5,7 +5,7 @@ root_dir: /cluster/valinor/jschmidt/becominglit
 data:
   root_path: ${root_dir}
   subject: ${sid}
-  sequences: ["EXP-1", "EXP-2", "SEN-01", "SEN-02", "SEN-03"]
+  sequences: ["STATIC"]
   fully_lit_only: False
 
 dataloader:
@@ -101,7 +101,7 @@ train:
   # CHANGE ME
   n_max_iters: 200_000
   log_every_n_steps: 50
-  summary_every_n_steps: 10_000
+  summary_every_n_steps: 5_000
   ckpt_every_n_steps: 50_000
 
 test:

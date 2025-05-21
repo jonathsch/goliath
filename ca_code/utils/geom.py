@@ -248,6 +248,10 @@ class GeometryModule(nn.Module):
         self.register_buffer("bary_image", bary_image.cpu())
         self.register_buffer("face_index_image", face_index.cpu())
 
+        # Load neck mask
+        neck_mask = th.load("/cluster/valinor/jschmidt/flame_neck_mask.pt")
+        self.register_buffer("neck_mask", neck_mask)
+
     def render_index_images(self, uv_size, flip_uv=False, impaint=False):
         index_image = make_uv_vert_index(
             self.vt, self.vi, self.vti, uv_shape=uv_size, flip_uv=flip_uv
